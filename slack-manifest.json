@@ -1,0 +1,63 @@
+{
+  "display_information": {
+    "name": "{{BOT_NAME}}",
+    "description": "{{OWNER_NAME}}'s Claude Code, on call in Slack. Tag me with a task and I'll do it and reply here.",
+    "background_color": "#111111"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "{{BOT_NAME}}",
+      "always_online": true
+    },
+    "assistant_view": {
+      "assistant_description": "{{OWNER_NAME}}'s Claude Code in Slack. Only {{OWNER_NAME}} can give it tasks."
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "chat:write",
+        "reactions:write",
+        "channels:history",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "channels:read",
+        "groups:read",
+        "im:read",
+        "im:write",
+        "mpim:read",
+        "mpim:write",
+        "files:read",
+        "files:write",
+        "users:read",
+        "channels:join",
+        "emoji:read",
+        "assistant:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": false
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

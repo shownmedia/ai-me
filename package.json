@@ -1,0 +1,28 @@
+{
+  "name": "ai-me",
+  "version": "1.0.0",
+  "description": "Slack bot that hands tasks to your local Claude Code and always replies back",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "test": "node --test test/*.test.js",
+    "try": "node --env-file=.env bin/try.js",
+    "lessons": "node --env-file=.env bin/lessons.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shownmedia/ai-me.git"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/shownmedia/ai-me/issues"
+  },
+  "homepage": "https://github.com/shownmedia/ai-me#readme",
+  "dependencies": {
+    "@slack/bolt": "^4.7.3"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20.6"
+  }
+}
