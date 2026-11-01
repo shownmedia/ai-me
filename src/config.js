@@ -93,6 +93,10 @@ export const config = {
   podGrowthEngineers: nameMap(env.POD_GROWTH_ENGINEERS),
   launchTeamKey: env.LUMEN_LAUNCH_TEAM_KEY || '',
   lumenUrl: env.LUMEN_URL || 'https://lumen.shownmedia.com',
+  // Answer teammates' status questions when they tag the owner, and remind assignees the day before a
+  // due date the owner set (src/assist.js, add-on). On by default; STAND_IN=off / DUE_REMINDERS=off.
+  standIn: !/^(off|0|false|no)$/i.test(env.STAND_IN || ''),
+  dueReminders: !/^(off|0|false|no)$/i.test(env.DUE_REMINDERS || ''),
   // Weekly game tape (src/game-tape.js): off unless GAME_TAPE_ENABLED=1. Times are New York.
   gameTape: {
     enabled: /^(1|true|yes)$/i.test(env.GAME_TAPE_ENABLED || ''),

@@ -2,7 +2,7 @@
 // that file; the public ai-me copy doesn't, and then the bot runs without them.
 import fs from 'node:fs';
 
-const NONE = { scope: () => null, systemPrompt: () => '', start: () => {} };
+const NONE = { scope: () => null, systemPrompt: () => '', observe: () => {}, start: () => {} };
 
 export async function loadAddons(config, file = new URL('./addons.js', import.meta.url)) {
   if (!fs.existsSync(file)) return NONE;

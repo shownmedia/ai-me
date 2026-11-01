@@ -240,6 +240,7 @@ function route(ev) {
   if (ev.user_team && teamId && ev.user_team !== teamId) return; // people from other orgs (Slack Connect) never reach the bot
   if (handleComms(ev)) return;
   if (handleJoinGroup(ev)) return;
+  addons.observe(ev); // add-ons that act on channel chatter (src/assist.js); never tasks
   const busyHere = running.has(keyOf(ev.channel, ev.thread_ts)) && /^\s*(stop|cancel)\b/i.test(ev.text || '');
   if (!busyHere && !addressedToBot({ channel: ev.channel, threadTs: ev.thread_ts, text: ev.text })) return;
   incoming({ channel: ev.channel, ts: ev.ts, threadTs: ev.thread_ts, user: ev.user, text: ev.text, files: ev.files }).catch((err) =>
