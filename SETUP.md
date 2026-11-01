@@ -66,8 +66,8 @@ It only works while the computer is on and awake (it catches up on missed messag
 
 ## 7. Tell them (keep it this short)
 
-- "Done. DM **AI <First>** anything you'd ask me here, or tag it in a channel. It only takes tasks from you."
-- Channels: `/invite @AI <First>` first, then tag it. In a DM it doesn't need a tag.
+- "Done. DM **AI <First>** anything you'd ask me here. It only takes tasks from you."
+- Keep it in your DMs; I'd skip adding it to channels. Use it like a superpowered search engine that can also work on your computer: find a Slack thread, the right Google Doc or SOP, or the answer to a question.
 - In a thread: reply to keep going, `stop` to cancel, "use opus" for harder work.
 - It updates itself. If it ever acts up, open Terminal (**Win:** PowerShell) and run the same setup command again; it repairs and re-checks everything.
 - Questions: Gabriela. Claude account: Dylan Crispin.
