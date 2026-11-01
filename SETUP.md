@@ -61,7 +61,7 @@ Send the bot a DM as them with the Slack connector (`slack_send_message` to the 
 
 It only works while the computer is on and awake (it catches up on missed messages within 5 minutes of waking).
 
-- Mac: ask them to type `! sudo pmset -c sleep 0 disablesleep 1` here and enter their Mac password (on the charger it never sleeps, even with the lid closed; battery is unchanged).
+- Mac: give them the **keep-awake-charging** skill so they can check or undo this later. If `~/.claude/plugins/installed_plugins.json` doesn't list `keep-awake-charging`, run `mkdir -p ~/.claude/skills && cp -R ~/ai-me/skills/keep-awake-charging ~/.claude/skills/`. Then follow `~/ai-me/skills/keep-awake-charging/SKILL.md`, but in its step 2 have them type `! sudo pmset -c sleep 0 disksleep 0 disablesleep 1` here and enter their Mac password (on the charger it never sleeps, even with the lid closed; battery is unchanged). Its power button step makes a quick press lock the Mac instead of sleeping it.
 - **Win:** run `powercfg /change standby-timeout-ac 0` (never sleep while plugged in).
 
 ## 7. Tell them (keep it this short)
