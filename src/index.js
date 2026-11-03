@@ -398,7 +398,21 @@ async function runJob(k, t) {
   await deliver(t);
 }
 
+// One delivery per thread at a time: the 60s retry, boot and a finishing job can all reach the same
+// thread, and two at once would post or upload the same part twice.
+const delivering = new Set();
 async function deliver(t) {
+  const k = keyOf(t.channel, t.threadTs);
+  if (!t.finalPending || delivering.has(k)) return !t.finalPending;
+  delivering.add(k);
+  try {
+    return await deliverOnce(t);
+  } finally {
+    delivering.delete(k);
+  }
+}
+
+async function deliverOnce(t) {
   const f = t.finalPending;
   if (!f) return true;
   try {
@@ -472,6 +486,8 @@ function pump() {
         log(`[job] ${k} crashed:`, err.stack || err.message);
         t.finalPending ??= { text: `Something broke on my side before I could finish: ${err.message}. Reply here to retry.`, ok: false, msgTs: [t.reactTs].filter(Boolean), posted: 0 };
         t.inflight = null;
+        // Close the run window, or later asks in this thread would be taken for echoes of it.
+        if (t.lastRun && !t.lastRun.end) t.lastRun.end = Date.now();
         store.save();
         await deliver(t);
       })
@@ -574,6 +590,9 @@ async function main() {
 
   // Anything that was running when we died goes back on the queue, first in line.
   for (const t of Object.values(state.threads)) {
+    // A run cut off by a crash with nothing to resume never got its end: close it (see the echo check).
+    // Its last activity is the best guess at when it stopped, so asks sent while the bot was down still count.
+    if (!t.inflight?.length && t.lastRun && !t.lastRun.end) t.lastRun.end = Math.max(t.lastRun.start, Math.min(t.lastActivity || Date.now(), Date.now()));
     if (t.inflight?.length) {
       t.pending = [...t.inflight.map((m) => ({ ...m, resumed: true, queuedAt: 0 })), ...t.pending];
       t.inflight = null;

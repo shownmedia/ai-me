@@ -44,7 +44,7 @@ test('lessons run once a day after the hour', () => {
 });
 
 test('memory index path matches how Claude Code names project folders', () => {
-  assert.match(memoryIndexPath('/Users/me'), /\.claude\/projects\/-Users-me\/memory\/MEMORY\.md$/);
+  assert.match(memoryIndexPath('/Users/me'), /\.claude[\\/]projects[\\/]-Users-me[\\/]memory[\\/]MEMORY\.md$/);
 });
 
 test('auto-saved lessons say so and the save prompt lists them', () => {

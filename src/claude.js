@@ -43,8 +43,11 @@ export function killTree(child, signal = 'SIGTERM') {
 }
 
 // Commands a Slack-driven run may never use: they could stop the bot that's running it.
+// Only commands aimed at the bot itself (its launchd label, node/claude processes) are blocked,
+// so runs can still schedule their own launchd jobs.
 export const SELF_PROTECT = [
-  'Bash(launchctl:*)', 'Bash(pkill:*)', 'Bash(killall:*)', 'Bash(*bin/install.sh*)',
+  'Bash(*com.mitchell.ai-mitchell*)', 'Bash(launchctl reboot*)', 'Bash(launchctl bootout gui/501)', 'Bash(launchctl bootout user/501)',
+  'Bash(pkill*node*)', 'Bash(pkill*claude*)', 'Bash(pkill*ai-mitchell*)', 'Bash(killall*node*)', 'Bash(killall*claude*)', 'Bash(*bin/install.sh*)',
   'Bash(taskkill*)', 'Bash(schtasks*)', 'Bash(*Stop-Process*)', 'Bash(*Unregister-ScheduledTask*)', 'Bash(*install.ps1*)',
 ];
 

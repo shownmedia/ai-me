@@ -82,6 +82,8 @@ export const config = {
   autoUpdate: /^(1|true|yes)$/i.test(env.AUTO_UPDATE || ''),
   // Launch recaps (src/recaps.js): off unless RECAPS_ENABLED=1. RECAPS_CHANNEL defaults to #launches-bots.
   recapsEnabled: /^(1|true|yes)$/i.test(env.RECAPS_ENABLED || ''),
+  // A QA run checks and fixes every recap before it posts (src/recap-prompts.js qaPrompt). RECAP_QA=off skips it.
+  recapQa: !/^(0|off|false|no)$/i.test(env.RECAP_QA || ''),
   recapsChannel: env.RECAPS_CHANNEL || 'C0C9ML7MKBL',
   // Who gets asked for a launch's main post when it can't be found: `Name:SlackID,Name:SlackID`,
   // keyed by Lumen's Outreach Specialist names. Unknown names fall back to OWNER_SLACK_ID.
@@ -97,6 +99,9 @@ export const config = {
   // due date the owner set (src/assist.js, add-on). On by default; STAND_IN=off / DUE_REMINDERS=off.
   standIn: !/^(off|0|false|no)$/i.test(env.STAND_IN || ''),
   dueReminders: !/^(off|0|false|no)$/i.test(env.DUE_REMINDERS || ''),
+  // Draft watch (src/draft-watch.js): creators whose live post isn't their draft, flagged in #influencers-general.
+  // Runs with the recaps (same Lumen key). DRAFT_WATCH=off stops it.
+  draftWatch: { enabled: !/^(off|0|false|no)$/i.test(env.DRAFT_WATCH || ''), channel: env.DRAFT_WATCH_CHANNEL || 'C0AMVPTGTHP' },
   // Weekly game tape (src/game-tape.js): off unless GAME_TAPE_ENABLED=1. Times are New York.
   gameTape: {
     enabled: /^(1|true|yes)$/i.test(env.GAME_TAPE_ENABLED || ''),
@@ -107,6 +112,21 @@ export const config = {
     postHour: Number(env.GAME_TAPE_POST_HOUR || 17),
     postTime: env.GAME_TAPE_POST_TIME || '10:30',
     timeoutMin: Number(env.GAME_TAPE_TIMEOUT_MIN || 240),
+    teamId: '',
+  },
+  // Weekly hiring tape: the same loop over the hiring team's recorded candidate calls (ATS).
+  hiringTape: {
+    enabled: /^(1|true|yes)$/i.test(env.HIRING_TAPE_ENABLED || ''),
+    reviewers: String(env.HIRING_TAPE_REVIEWERS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    channel: env.HIRING_TAPE_CHANNEL || '',
+    holidays: String(env.GAME_TAPE_HOLIDAYS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    genHour: Number(env.HIRING_TAPE_GEN_HOUR || 11),
+    postHour: Number(env.HIRING_TAPE_POST_HOUR || 15),
+    postTime: env.HIRING_TAPE_POST_TIME || '09:00',
+    timeoutMin: Number(env.HIRING_TAPE_TIMEOUT_MIN || 240),
+    atsUrl: env.ATS_URL || '',
+    standard: env.HIRING_TAPE_STANDARD || path.join(os.homedir(), '.shown', 'hiring-tape', 'STANDARD.md'),
+    renderer: env.HIRING_TAPE_RENDERER || path.join(os.homedir(), '.shown', 'hiring-tape', 'render.py'),
     teamId: '',
   },
   // !comms: one reminder for DMs ("take it to a channel") and one for channels ("reply in threads").
