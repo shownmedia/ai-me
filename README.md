@@ -23,6 +23,15 @@ Nothing person-specific is in the code. Everything about you lives in `.env`, so
 - **Updates:** with `AUTO_UPDATE=1` (the one-command setup turns it on) it checks its repo every 6 hours while idle, fast-forwards, reinstalls packages if needed and restarts on the new code. Local commits block it (it logs why instead of overwriting them).
 - **Billing:** runs on your Claude subscription (`apiKeySource: none`). The cost Claude Code reports is an API-price estimate, so it only goes in the log, never in Slack.
 
+## Sweeper DMs
+
+The ShownRoom cleanup and the questions waiting on you, sent as one DM per item so each has its own thread. Off unless `SWEEPER_ENABLED=1`.
+
+- **Weekdays at `SWEEPER_HOURS` (New York, default 12):** one Opus run (`SWEEPER_TIMEOUT_MIN`, default 90) reads ShownRoom, the launch calendar and Slack, and writes up to `SWEEPER_MAX` items to `data/sweeper/<day>-<hour>/result.json`: launch dates that don't match the calendar, late or blocked work nobody followed up on, launches with no owner or missing narrative/strategy docs, plus questions and escalations sent to you that you haven't answered. It skips anything already flagged in the last 3 days.
+- **Each item is a DM:** a reminder ("can i send this in #channel to these people?" + the message) or a call (who asked, the link, the recommended call, and the reply). Every item links its source; client and Slack Connect channels are never targets.
+- **Reply in its thread:** "yes" sends it from your account (Slack connector) exactly as written; anything else is the change to make before it sends; "no" skips it on the spot and it never comes back. Unanswered items can return after `SWEEPER_REPEAT_DAYS` (default 3).
+- Dry run on today's real data without posting: `npm run sweeper`.
+
 ## Security
 
 - Socket Mode: there's no public URL or webhook, so there's nothing to reach or brute-force from the internet. The bot only talks to Slack over an outbound websocket.

@@ -240,6 +240,7 @@ function route(ev) {
   if (ev.user_team && teamId && ev.user_team !== teamId) return; // people from other orgs (Slack Connect) never reach the bot
   if (handleComms(ev)) return;
   if (handleJoinGroup(ev)) return;
+  if (addons.intercept?.(ev)) return; // an add-on answered it without a Claude run (a sweeper "no")
   addons.observe(ev); // add-ons that act on channel chatter (src/assist.js); never tasks
   const busyHere = running.has(keyOf(ev.channel, ev.thread_ts)) && /^\s*(stop|cancel)\b/i.test(ev.text || '');
   if (!busyHere && !addressedToBot({ channel: ev.channel, threadTs: ev.thread_ts, text: ev.text })) return;

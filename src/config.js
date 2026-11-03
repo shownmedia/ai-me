@@ -102,6 +102,18 @@ export const config = {
   // Draft watch (src/draft-watch.js): creators whose live post isn't their draft, flagged in #influencers-general.
   // Runs with the recaps (same Lumen key). DRAFT_WATCH=off stops it.
   draftWatch: { enabled: !/^(off|0|false|no)$/i.test(env.DRAFT_WATCH || ''), channel: env.DRAFT_WATCH_CHANNEL || 'C0AMVPTGTHP' },
+  // Sweeper DMs (src/sweeper.js): off unless SWEEPER_ENABLED=1. Hours are New York, weekdays.
+  sweeper: {
+    enabled: /^(1|true|yes)$/i.test(env.SWEEPER_ENABLED || ''),
+    hours: String(env.SWEEPER_HOURS || '12').split(',').map((h) => h.trim()).filter(Boolean).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h <= 23),
+    max: Number(env.SWEEPER_MAX) > 0 ? Number(env.SWEEPER_MAX) : 15,
+    repeatDays: Number(env.SWEEPER_REPEAT_DAYS) >= 0 && env.SWEEPER_REPEAT_DAYS ? Number(env.SWEEPER_REPEAT_DAYS) : 3,
+    channel: env.SWEEPER_CHANNEL || '',
+    example: env.SWEEPER_EXAMPLE || '',
+    // Slack ids never tagged in a sweeper message (on top of the names in src/sweeper.js NEVER_TAG).
+    neverTag: String(env.SWEEPER_NEVER_TAG || '').split(',').map((s) => s.trim()).filter(Boolean),
+    timeoutMin: Number(env.SWEEPER_TIMEOUT_MIN || 90),
+  },
   // Weekly game tape (src/game-tape.js): off unless GAME_TAPE_ENABLED=1. Times are New York.
   gameTape: {
     enabled: /^(1|true|yes)$/i.test(env.GAME_TAPE_ENABLED || ''),
