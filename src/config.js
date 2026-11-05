@@ -144,6 +144,10 @@ export const config = {
     endHour: Number(env.SALES_CONCEPTS_END_HOUR || 21),
     refsDir: (env.SALES_CONCEPTS_REFS || path.join(os.homedir(), 'social-watch', '.claude', 'skills', 'script-studio', 'data')).replace(/^~/, os.homedir()),
     timeoutMin: Number(env.SALES_CONCEPTS_TIMEOUT_MIN || 60),
+    // The owner's running sales master doc: each call becomes a recap tab (from Attio) with a concepts
+    // child tab, and the SDR gets the link by DM. Unset = concepts go in the SDR's brief doc as before.
+    masterDoc: env.SALES_MASTER_DOC_ID || '',
+    sdrSlackId: env.SALES_CONCEPTS_SDR_SLACK_ID || '',
   },
   // Weekly game tape (src/game-tape.js): off unless GAME_TAPE_ENABLED=1. Times are New York.
   gameTape: {

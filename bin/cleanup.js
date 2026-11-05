@@ -29,16 +29,10 @@ if (!t && apply) {
   console.error("the bot doesn't track that thread, so --apply won't touch it");
   process.exit(1);
 }
-if (!t) {
-  // Dry run on a thread the bot doesn't know: asks are what the bot would have taken (every DM message, tags in channels).
-  const res = await client.conversations.replies({ channel, ts: threadTs, limit: 200 });
-  const asked = (x) => x.user === config.ownerId && (channel.startsWith('D') || (x.text || '').includes(`<@${botUserId}>`));
-  t = { channel, threadTs, sessionId: `try-${threadTs}`, askTs: (res.messages || []).filter(asked).map((x) => x.ts) };
-}
-if (!t.askTs?.length) {
-  console.log('nothing to clean: no tracked asks in this thread');
-  process.exit(0);
-}
+// Untracked threads get a throwaway entry; runCleanup finds the asks in the thread itself (pastAsks).
+t ??= { channel, threadTs, sessionId: `try-${threadTs}`, askTs: [] };
+// --apply is an explicit "clean up": it also covers threads from before Clean Up shipped.
+if (apply) t.cleanupNow = true;
 const res = await runCleanup({ client, config, t, botUserId, save: store?.save, log: console.log, dryRun: !apply });
 if (!res.plan) console.log('skipped: the thread was started by a bot post, or has no bot message to edit');
 else {

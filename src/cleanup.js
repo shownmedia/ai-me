@@ -76,6 +76,12 @@ export function fallbackSummary(transcript, { askTs, botUserId, ownerName }) {
   return [`${ownerName} asked: ${askText || '(see above)'}`, messageText(reply || {}).replace(/^<@\w+>\s*/, '')].filter(Boolean).join('\n\n');
 }
 
+// The asks the bot would have tracked: every owner message in a DM, the owner's tags of the bot in a channel.
+// "clean up" uses it so threads from before Clean Up shipped (no askTs) can be folded too.
+export function pastAsks(messages, { channel, ownerId, botUserId }) {
+  return messages.filter((m) => m.user === ownerId && (channel.startsWith('D') || (m.text || '').includes(`<@${botUserId}>`))).map((m) => m.ts);
+}
+
 // Messages archived by earlier cleanups of this thread (for the lessons DM).
 export function readArchive(file) {
   try {
@@ -121,6 +127,8 @@ export async function runCleanup({ client, config, t, botUserId, save = () => {}
   if (!t.cleanup) {
     const messages = await allReplies(client, t.channel, t.threadTs);
     const newest = Math.max(0, ...messages.map((m) => Number(m.ts) * 1000));
+    // Asked for ("clean up" or a dry run): also count asks the bot never tracked, like threads from before Clean Up.
+    if (t.cleanupNow || dryRun) t.askTs = [...new Set([...(t.askTs || []), ...pastAsks(messages, { channel: t.channel, ownerId: config.ownerId, botUserId })])];
     if (!dryRun && !t.cleanupNow && config.cleanupAfterMin != null && now - newest < config.cleanupAfterMin * 60_000) return { done: false, plan: null };
     const plan = planCleanup(messages, { askTs: t.askTs, botUserId, threadTs: t.threadTs, summaryTs: t.summaryTs });
     if (!plan || !plan.delete.length) {

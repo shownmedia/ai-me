@@ -176,3 +176,21 @@ test('a short "done" reply closes the conversation; anything more is a normal as
   for (const s of ['**Want me to post it?**', 'Should I send it? (draft below)', 'Post it? 👀', 'draft:\n<https://x.com|link>\nreply yes and I send it']) assert.ok(ASKS_BACK.test(s), s);
   assert.ok(!ASKS_BACK.test('• done: posted in #launches\n• checked live'));
 });
+
+test('"clean up" in a thread from before Clean Up shipped finds its asks in the thread', async () => {
+  const msgs = [
+    { ts: '1.0', user: OWNER, text: '<@UALEX> heads up, new campaign' },
+    { ts: '1.1', user: OWNER, text: '<@UBOT> set it up' },
+    { ts: '1.2', user: BOT, text: 'done' },
+    { ts: '1.3', user: 'UALEX', text: 'nice' },
+    { ts: '1.4', user: OWNER, text: '<@UBOT> fix it' },
+    { ts: '1.5', user: BOT, text: 'fixed' },
+    { ts: '1.6', user: OWNER, text: '<@UBOT> clean up' },
+  ];
+  const t = { channel: 'C1', threadTs: '1.0', sessionId: 'sess', askTs: ['1.6'], pending: [], cleanupNow: true };
+  const { client, calls } = fakeSlack(msgs);
+  const r = await runCleanup({ client, config: cfg(), t, botUserId: BOT });
+  assert.equal(r.done, true);
+  assert.equal(calls.edited[0].ts, '1.2');
+  assert.deepEqual(calls.deleted.map((d) => d.ts), ['1.1', '1.4', '1.5', '1.6'], 'the root and the teammate stay');
+});
