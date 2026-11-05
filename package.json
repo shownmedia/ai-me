@@ -9,7 +9,10 @@
     "try": "node --env-file=.env bin/try.js",
     "lessons": "node --env-file=.env bin/lessons.js",
     "assist": "node --env-file=.env bin/assist.js",
-    "sweeper": "node --env-file=.env bin/sweeper.js"
+    "sweeper": "node --env-file=.env bin/sweeper.js",
+    "concepts": "node --env-file=.env bin/sales-concepts.js",
+    "next-steps": "node --env-file=.env bin/next-steps.js",
+    "cleanup": "node --env-file=.env bin/cleanup.js"
   },
   "repository": {
     "type": "git",

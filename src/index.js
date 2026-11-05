@@ -20,6 +20,7 @@ import { toMrkdwn, chunk, lowercase, parseComms, commsReply, threadsWithNewRepli
 import { loadSystemPrompt, guestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
+import { CLEANUP_COMMAND, cleanupDue, runCleanup } from './cleanup.js';
 
 const { App, LogLevel } = bolt;
 const store = createStore(path.join(config.dataDir, 'state.json'));
@@ -154,6 +155,7 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.users };
   if (scope?.thread) Object.assign(t, scope.thread);
   if (scope?.opus && !t.modelPinned) t.model = config.opusModel;
+  if (user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
   // Never sweep up older thread messages from before we were asked.
   if (Number(ts) > Number(t.lastReplySeen || 0)) t.lastReplySeen = ts;
   // Drop our own mention and the "Sent using @Claude" footer Slack adds to messages sent via its connector.
@@ -164,6 +166,24 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
     store.save();
     if (running.has(k)) running.get(k).stop();
     else await safe(() => client.chat.postMessage({ channel, thread_ts: t.threadTs, text: 'Nothing is running in this thread.' }), 'post');
+    return;
+  }
+  // "clean up": fold this thread into one summary message now (src/cleanup.js), no Claude run.
+  if (CLEANUP_COMMAND.test(clean) && !scope) {
+    if (!config.userToken) {
+      store.save();
+      await safe(() => client.chat.postMessage({ channel, thread_ts: t.threadTs, text: "I can't clean up threads yet: I need a Slack user token (SLACK_USER_TOKEN) to delete your messages." }), 'post');
+      return;
+    }
+    if (threadTs) t.cleanupNow = true;
+    else {
+      // Said outside a thread: every finished conversation here gets cleaned, and the command itself just goes.
+      delete state.threads[k];
+      for (const x of Object.values(state.threads)) if (x.channel === channel && x.askTs?.length && x.lastOk) x.cleanupNow = true;
+      await safe(() => client.chat.delete({ channel, ts, token: config.userToken }), 'delete');
+    }
+    store.save();
+    cleanupTick();
     return;
   }
   // Only an explicit ask switches models ("use opus", "opus: …"), not any mention of the word.
@@ -437,6 +457,7 @@ async function deliverOnce(t) {
     if (f.ok && config.doneEmoji) await safe(() => client.reactions.add({ channel: t.channel, timestamp: ts, name: config.doneEmoji }), 'react');
   }
   if (f.outbox) clearOutbox(f.outbox);
+  t.lastOk = f.ok; // Clean Up only folds threads whose last run went OK
   t.finalPending = null;
   t.reactTs = null; // the next task in this thread gets its own reactions
   store.save();
@@ -476,7 +497,7 @@ async function uploadFiles(t, f) {
 function pump() {
   while (running.size < config.maxParallel) {
     const next = Object.entries(state.threads)
-      .filter(([k, t]) => t.pending.length && !t.finalPending && !running.has(k))
+      .filter(([k, t]) => t.pending.length && !t.finalPending && !t.cleanup && !running.has(k) && !cleaningKeys.has(k))
       .sort((a, b) => a[1].pending[0].queuedAt - b[1].pending[0].queuedAt)[0];
     if (!next) return;
     const [k, t] = next;
@@ -496,6 +517,32 @@ function pump() {
         running.delete(k);
         setImmediate(pump);
       });
+  }
+}
+
+// ---- clean up ---------------------------------------------------------------
+
+// Finished conversations fold into one summary message (src/cleanup.js), one thread at a time.
+let cleaning = false;
+const cleaningKeys = new Set();
+async function cleanupTick() {
+  if (cleaning || !config.userToken) return;
+  cleaning = true;
+  try {
+    for (const [k, t] of Object.entries(state.threads)) {
+      if (!cleanupDue(t, { afterMin: config.cleanupAfterMin, running: running.has(k) })) continue;
+      cleaningKeys.add(k);
+      try {
+        await runCleanup({ client, config, t, botUserId, save: store.save, log, busy: () => t.pending.length > 0 || running.has(k) });
+      } catch (err) {
+        log(`[cleanup] ${k} failed: ${err.data?.error || err.message}`);
+      } finally {
+        cleaningKeys.delete(k);
+      }
+    }
+  } finally {
+    cleaning = false;
+    pump();
   }
 }
 
@@ -588,6 +635,17 @@ async function main() {
   const scopes = auth.response_metadata?.scopes || [];
   if (scopes.length && !scopes.includes('files:write')) log('[boot] no files:write scope: renders and images can\'t be uploaded to threads (add it in the Slack app, then reinstall)');
   teamId = auth.team_id;
+  // Clean Up deletes the owner's messages with their user token: it has to be theirs and allowed to.
+  if (config.userToken) {
+    const who = await client.auth.test({ token: config.userToken }).catch((err) => ({ error: err.data?.error || err.message }));
+    if (who.user_id !== config.ownerId) {
+      log(`[boot] SLACK_USER_TOKEN ${who.error ? `doesn't work (${who.error})` : `belongs to ${who.user_id}, not ${config.ownerId}`}: Clean Up is off`);
+      config.userToken = '';
+    } else if (!(who.response_metadata?.scopes || []).includes('chat:write')) {
+      log('[boot] SLACK_USER_TOKEN has no chat:write user scope: Clean Up is off');
+      config.userToken = '';
+    }
+  }
 
   // Anything that was running when we died goes back on the queue, first in line.
   for (const t of Object.values(state.threads)) {
@@ -610,6 +668,7 @@ async function main() {
 
   setInterval(() => {
     for (const t of Object.values(state.threads)) if (t.finalPending && !running.has(keyOf(t.channel, t.threadTs))) deliver(t);
+    cleanupTick();
   }, 60_000);
   setInterval(() => catchUp().then(pump), config.catchUpMin * 60_000);
 
@@ -628,7 +687,7 @@ async function main() {
   // service restarts on it. Never mid-task, and nothing to resume because nothing is running.
   if (config.autoUpdate) {
     const updateTick = () => {
-      const idle = running.size === 0 && activeRuns() === 0 && !lessonsBusy && Object.values(state.threads).every((t) => !t.pending.length && !t.inflight && !t.finalPending);
+      const idle = running.size === 0 && activeRuns() === 0 && !lessonsBusy && !cleaning && Object.values(state.threads).every((t) => !t.pending.length && !t.inflight && !t.finalPending);
       if (!idle || !updateDue(state.updateCheckedAt)) return;
       state.updateCheckedAt = Date.now();
       store.save();

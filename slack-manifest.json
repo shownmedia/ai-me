@@ -40,6 +40,9 @@
         "channels:join",
         "emoji:read",
         "assistant:write"
+      ],
+      "user": [
+        "chat:write"
       ]
     }
   },

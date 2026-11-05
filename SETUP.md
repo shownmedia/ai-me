@@ -8,7 +8,7 @@ Work out the OS first (`uname` / `$env:OS`). Windows commands are marked **Win**
 
 ## 0. Already have a bot?
 
-- `~/ai-me/.env` with `SLACK_BOT_TOKEN`: this is a re-run. Pull updates (`git -C ~/ai-me pull --ff-only`), reinstall the service (step 4), then do steps 3, 5 and 6 as checks. Skip the Slack app.
+- `~/ai-me/.env` with `SLACK_BOT_TOKEN`: this is a re-run. Pull updates (`git -C ~/ai-me pull --ff-only`), reinstall the service (step 4), then do steps 3, 5 and 6 as checks. Skip the Slack app, except: if `.env` has no `SLACK_USER_TOKEN`, open their app's **OAuth & Permissions**, under **User Token Scopes** add `chat:write`, click **Reinstall to Shown Media** → **Allow**, copy the **User OAuth Token** and run `node bin/save-token.js SLACK_USER_TOKEN`, then restart the service (step 4).
 - An older copy (a `~/ai-<name>` folder with a `.env` that has `SLACK_BOT_TOKEN`, cloned from `shownmedia/ai-mitchell`): move them over and keep their Slack app. Copy that `.env` into `~/ai-me/.env`, add `AUTO_UPDATE=1`, run the old copy's `bin/install.sh uninstall` (**Win:** `powershell -ExecutionPolicy Bypass -File bin\install.ps1 uninstall`), then step 4. Leave the old folder where it is and tell them they can delete it later.
 
 ## 1. Who they are
@@ -23,7 +23,7 @@ Work out the OS first (`uname` / `$env:OS`). Windows commands are marked **Win**
    - If Claude in Chrome is connected (try `tabs_context_mcp`), drive the pages yourself in a new tab. Otherwise walk them through it.
 2. They pick **Shown Media** if asked, click **Next**, then **Create**.
 3. App-level token: on the app page, under **App-Level Tokens** click **Generate Token and Scopes**, name it `socket`, **Add Scope** → `connections:write`, **Generate**, then **Copy**. Run `node bin/save-token.js SLACK_APP_TOKEN` (it reads the clipboard into `.env` and never prints the token). If it says the clipboard is wrong, have them click Copy again.
-4. Install: left sidebar **OAuth & Permissions** → **Install to Shown Media** → **Allow**. Then **Copy** the **Bot User OAuth Token** and run `node bin/save-token.js SLACK_BOT_TOKEN`. (Never the "Create and Install" shortcut on the manifest screen; it errors.)
+4. Install: left sidebar **OAuth & Permissions** → **Install to Shown Media** → **Allow**. Then **Copy** the **Bot User OAuth Token** and run `node bin/save-token.js SLACK_BOT_TOKEN`, then **Copy** the **User OAuth Token** and run `node bin/save-token.js SLACK_USER_TOKEN` (Clean Up uses it to delete their own messages when a finished conversation folds into the bot's first reply). (Never the "Create and Install" shortcut on the manifest screen; it errors.)
 5. Check it: `node --env-file=.env -e "fetch('https://slack.com/api/auth.test',{method:'POST',headers:{Authorization:'Bearer '+process.env.SLACK_BOT_TOKEN}}).then(r=>r.json()).then(j=>console.log(j.ok,j.user,j.user_id))"` should print `true`. Note the bot user ID.
 6. If Slack's page shows an error the first time, wait a few seconds and reload. If the workspace won't let them create apps, stop and tell them to DM Gabriela.
 

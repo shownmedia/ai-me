@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { askClaude, runClaude, RUN_ENV, SELF_PROTECT } from './claude.js';
 import { renderContext } from './context.js';
+import { readArchive } from './cleanup.js';
 
 export const LESSONS_HEADER = "lessons from today's threads";
 
@@ -82,6 +83,11 @@ export async function reviewLessons({ client, config, state, botUserId, since, l
         messages = (await client.conversations.replies({ channel: t.channel, ts: t.threadTs, limit: 200 })).messages || [];
       } catch {
         continue;
+      }
+      // Cleaned-up threads keep their deleted messages in an archive (src/cleanup.js).
+      if (t.archive) {
+        const live = new Set(messages.map((m) => m.ts));
+        messages = [...readArchive(t.archive).filter((m) => !live.has(m.ts)), ...messages].sort((a, b) => Number(a.ts) - Number(b.ts));
       }
       if (ownerAsks(messages, { ownerId: config.ownerId, botUserId, channel: t.channel, since }).length < 2) continue;
       // Our own lessons posts aren't material for more lessons.

@@ -72,6 +72,11 @@ export const config = {
   workingEmoji: env.WORKING_EMOJI || 'eyes',
   finishedEmoji: env.FINISHED_EMOJI || 'white_check_mark',
   doneEmoji: env.DONE_EMOJI || '',
+  // Clean Up (src/cleanup.js): a finished thread folds into one summary message this many minutes after
+  // its last activity; CLEANUP_AFTER_MIN=off leaves threads alone ("clean up" in a thread still works).
+  // Deleting the owner's messages needs their user token (xoxp, user scope chat:write); without it nothing is cleaned.
+  userToken: env.SLACK_USER_TOKEN || '',
+  cleanupAfterMin: /^(off|no|false)$/i.test(env.CLEANUP_AFTER_MIN || '') ? null : Math.max(1, Number(env.CLEANUP_AFTER_MIN || 60)),
   lowercase: /^(1|true|yes)$/i.test(env.LOWERCASE || ''),
   // Hour (local, 0-23) of the daily lessons DM; LESSONS_HOUR=off turns it off.
   // Lessons are saved to memory when the DM goes out; LESSONS_AUTOSAVE=off goes back to "reply save".
@@ -113,6 +118,29 @@ export const config = {
     // Slack ids never tagged in a sweeper message (on top of the names in src/sweeper.js NEVER_TAG).
     neverTag: String(env.SWEEPER_NEVER_TAG || '').split(',').map((s) => s.trim()).filter(Boolean),
     timeoutMin: Number(env.SWEEPER_TIMEOUT_MIN || 90),
+  },
+  // Next steps (src/next-steps.js): off unless NEXT_STEPS_ENABLED=1. After a Fathom 1:1 with a teammate, their
+  // action items go to them in a DM from the owner's account; drafts only until NEXT_STEPS_REVIEW_UNTIL (YYYY-MM-DD).
+  nextSteps: {
+    enabled: /^(1|true|yes)$/i.test(env.NEXT_STEPS_ENABLED || ''),
+    fathomKey: env.FATHOM_API_KEY || '',
+    ownerEmail: (env.OWNER_EMAIL || '').toLowerCase(),
+    reviewUntil: env.NEXT_STEPS_REVIEW_UNTIL || '',
+  },
+  // Sales concepts (src/sales-concepts.js): off unless SALES_CONCEPTS_ENABLED=1. Proven launch concepts
+  // added to a prospect call's brief doc when the SDR shares one, or LEAD_HOURS before a sales call.
+  salesConcepts: {
+    enabled: /^(1|true|yes)$/i.test(env.SALES_CONCEPTS_ENABLED || ''),
+    from: String(env.SALES_CONCEPTS_FROM || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    sdrName: env.SALES_CONCEPTS_SDR_NAME || 'the SDR',
+    team: String(env.SALES_CONCEPTS_TEAM || env.SALES_CONCEPTS_FROM || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    leadHours: Number(env.SALES_CONCEPTS_LEAD_HOURS || 72),
+    // Guests from these domains (plus the sales team's) are never the prospect.
+    internal: String(env.SALES_CONCEPTS_INTERNAL_DOMAINS || 'shownmedia.com').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+    startHour: Number(env.SALES_CONCEPTS_START_HOUR || 8),
+    endHour: Number(env.SALES_CONCEPTS_END_HOUR || 21),
+    refsDir: (env.SALES_CONCEPTS_REFS || path.join(os.homedir(), 'social-watch', '.claude', 'skills', 'script-studio', 'data')).replace(/^~/, os.homedir()),
+    timeoutMin: Number(env.SALES_CONCEPTS_TIMEOUT_MIN || 60),
   },
   // Weekly game tape (src/game-tape.js): off unless GAME_TAPE_ENABLED=1. Times are New York.
   gameTape: {

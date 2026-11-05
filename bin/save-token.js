@@ -2,13 +2,14 @@
 // Saves a Slack token from the clipboard into .env without printing it.
 // Usage: node bin/save-token.js SLACK_APP_TOKEN   (expects xapp-…)
 //        node bin/save-token.js SLACK_BOT_TOKEN   (expects xoxb-…)
+//        node bin/save-token.js SLACK_USER_TOKEN  (expects xoxp-…, for Clean Up)
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
-const PREFIX = { SLACK_APP_TOKEN: 'xapp-', SLACK_BOT_TOKEN: 'xoxb-' };
+const PREFIX = { SLACK_APP_TOKEN: 'xapp-', SLACK_BOT_TOKEN: 'xoxb-', SLACK_USER_TOKEN: 'xoxp-' };
 const key = process.argv[2];
 if (!PREFIX[key]) {
-  console.error('usage: node bin/save-token.js SLACK_APP_TOKEN|SLACK_BOT_TOKEN');
+  console.error('usage: node bin/save-token.js SLACK_APP_TOKEN|SLACK_BOT_TOKEN|SLACK_USER_TOKEN');
   process.exit(1);
 }
 const clip = process.platform === 'win32'
