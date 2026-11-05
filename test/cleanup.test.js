@@ -168,3 +168,11 @@ test('automatic cleanups wait until the thread itself has been quiet', async () 
   assert.equal(calls.edited.length, 0);
   assert.deepEqual(t.askTs, ['1.0'], 'still tracked for later');
 });
+
+test('a short "done" reply closes the conversation; anything more is a normal ask', async () => {
+  const { DONE_REPLY, ASKS_BACK } = await import('../src/cleanup.js');
+  for (const s of ["That's good", 'thats good', 'Oh, this is great', 'perfect', 'perfect, thanks!', 'thank you', 'looks good', 'lgtm', 'ok cool', 'great thanks', ':+1:', ':+1::skin-tone-3:', '👍', '👍🏻', '🙏🏽', '💯', 'love it', "we're good", 'this looks great', 'that’s perfect']) assert.ok(DONE_REPLY.test(s), s);
+  for (const s of ["that's good but make it blue", 'good, now send it to alex', 'is that good?', 'great, can you also do the other one', 'thanks, post it in #launches', 'not good', 'make it perfect', 'done', "it's done", "that's it", ':-1:', ':x:', ':eyes:', ':thinking_face:']) assert.ok(!DONE_REPLY.test(s), s);
+  for (const s of ['**Want me to post it?**', 'Should I send it? (draft below)', 'Post it? 👀', 'draft:\n<https://x.com|link>\nreply yes and I send it']) assert.ok(ASKS_BACK.test(s), s);
+  assert.ok(!ASKS_BACK.test('• done: posted in #launches\n• checked live'));
+});

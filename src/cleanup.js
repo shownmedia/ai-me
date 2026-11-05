@@ -20,6 +20,16 @@ import { renderContext, messageText } from './context.js';
 
 export const CLEANUP_COMMAND = /^clean ?up[.!]*$/i;
 
+// A short "we're done" reply in a thread ("that's good", "perfect, thanks", "👍") closes the conversation:
+// it's cleaned up right away instead of starting another run. Anything with more in it ("that's good but…")
+// is a normal ask.
+const EMOJI = "(:(\\+1|thumbsup|pray|fire|white_check_mark|raised_hands|heart|100|ok_hand|clap|muscle|star-struck|heart_eyes|tada)(::skin-tone-\\d)?:|[\\u{1F44D}\\u{1F64F}\\u{1F525}\\u{2705}\\u{1F64C}\\u{2764}\\u{1F44C}\\u{1F4AF}\\u{1F44F}\\u{1F389}\\u{FE0F}\\u{1F3FB}-\\u{1F3FF}])+";
+const DONE_WORDS = `(ok(ay)?|cool|nice|great|perfect|awesome|amazing|beautiful|love (it|this)|thanks?|thank you|ty|thx|good|lgtm|sounds good|looks (good|great|perfect)|all good|we['’]?re good|(that|this|it)( i|['’])?s (good|great|perfect|fine|amazing|awesome)|(that|this) (looks|works) (good|great)|${EMOJI})`;
+export const DONE_REPLY = new RegExp(`^((oh|ok|okay|yes|yep|yeah)[, ]+)?${DONE_WORDS}([,. !]+${DONE_WORDS})*[.! ]*$`, 'iu');
+
+// The answer leaves something open ("want me to post it?", "reply yes and I'll send it"): a short "ok" then means go ahead.
+export const ASKS_BACK = /\?|\b(want me to|should i|shall i|let me know|reply (yes|ok|done|go)|confirm)\b/i;
+
 // Ready to clean (or to finish a cleanup that was cut off).
 export function cleanupDue(t, { now = Date.now(), afterMin, running = false }) {
   if (running || t.guest || !t.askTs?.length) return false;

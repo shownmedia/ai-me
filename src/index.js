@@ -20,7 +20,7 @@ import { toMrkdwn, chunk, editedReply, lowercase, parseComms, commsReply, thread
 import { loadSystemPrompt, guestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
-import { CLEANUP_COMMAND, cleanupDue, runCleanup } from './cleanup.js';
+import { CLEANUP_COMMAND, DONE_REPLY, ASKS_BACK, cleanupDue, runCleanup } from './cleanup.js';
 
 const { App, LogLevel } = bolt;
 const store = createStore(path.join(config.dataDir, 'state.json'));
@@ -169,7 +169,9 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
     return;
   }
   // "clean up": fold this thread into one summary message now (src/cleanup.js), no Claude run.
-  if (CLEANUP_COMMAND.test(clean) && !scope) {
+  // A short "that's good" in a thread after a finished answer means the same thing.
+  const doneReply = Boolean(threadTs && config.userToken && t.closable && !running.has(k) && !t.pending.length && !t.inflight && !t.finalPending && DONE_REPLY.test(clean));
+  if ((CLEANUP_COMMAND.test(clean) || doneReply) && !scope) {
     if (!config.userToken) {
       store.save();
       await safe(() => client.chat.postMessage({ channel, thread_ts: t.threadTs, text: "I can't clean up threads yet: I need a Slack user token (SLACK_USER_TOKEN) to delete your messages." }), 'post');
@@ -192,6 +194,7 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   else if (/(^|\b(use|switch to|with|on|in)\s+)sonnet\b/i.test(clean)) Object.assign(t, { model: config.defaultModel, modelPinned: true });
 
   const attachments = await downloadFiles(files, ts);
+  t.closable = false;
   t.pending.push({ ts, text: clean, attachments, caughtUp, queuedAt: Date.now(), askedAt: Date.now(), from: user });
   store.save();
   log(`[intake] ${k}${caughtUp ? ' (caught up)' : ''}: ${clean.slice(0, 80)}`);
@@ -501,6 +504,9 @@ async function deliverOnce(t) {
   }
   if (f.outbox) clearOutbox(f.outbox);
   t.lastOk = f.ok; // Clean Up only folds threads whose last run went OK
+  // A short "that's good" may close the thread only right after an OK answer that left nothing open
+  // (a question in its last lines means "ok" answers it). Any new ask clears it.
+  t.closable = f.ok && !ASKS_BACK.test(String(f.text || '').trim().slice(-300));
   t.finalPending = null;
   t.reactTs = null; // the next task in this thread gets its own reactions
   store.save();
