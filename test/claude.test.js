@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
 import { runClaude, buildArgs, estimateTask, parseEstimate, windowsClaude } from '../src/claude.js';
-import { toMrkdwn, chunk, describeTool, lowercase, parseLinks, commsText, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from '../src/format.js';
+import { editedReply, toMrkdwn, chunk, describeTool, lowercase, parseLinks, commsText, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from '../src/format.js';
 
 const bin = [process.execPath, path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-claude.js')];
 const base = { bin, cwd: process.cwd(), prompt: 'hi', sessionId: 'sess-1', model: 'sonnet', permissionMode: 'bypassPermissions', timeoutMin: 1 };
@@ -191,4 +191,14 @@ test('guest threads: only listed users, only in the listed thread', () => {
   assert.equal(guestFor(g, 'C2', '1.2', 'UA'), null);
   assert.equal(guestThread(g, 'C1', '1.2')?.project, 'p');
   assert.equal(guestFor('not a list', 'C1', '1.2', 'UA'), null);
+});
+
+test('edit in place: answers stack under the message until it would overflow', () => {
+  assert.deepEqual(editedReply('', 'a'), { edit: 'a', extra: [] });
+  assert.deepEqual(editedReply('old', 'new'), { edit: 'old\n\nnew', extra: [] });
+  const long = 'x'.repeat(40);
+  assert.deepEqual(editedReply('old', long, 30).edit, 'old', 'old text stays, answer goes in new messages');
+  assert.ok(editedReply('old', long, 30).extra.length >= 2);
+  assert.equal(editedReply('', long, 30).extra.length >= 1, true);
+  assert.deepEqual(editedReply('', ''), { edit: '', extra: [] }, 'callers must never pass an empty answer');
 });

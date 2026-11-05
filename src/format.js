@@ -63,6 +63,16 @@ export function chunk(text, max = 3500) {
   return out;
 }
 
+// EDIT_IN_PLACE: a thread's one bot message gets each new answer added under what it already says.
+// When that won't fit in one Slack message, the old text stays as it was and the answer goes in new
+// message(s); the last one becomes the message later answers are added to.
+export function editedReply(base, answer, max = 3500) {
+  const full = base ? `${base}\n\n${answer}` : answer;
+  if (full.length <= max) return { edit: full, extra: [] };
+  const parts = chunk(answer, max);
+  return base ? { edit: base, extra: parts } : { edit: parts[0], extra: parts.slice(1) };
+}
+
 export function describeTool(name, input = {}) {
   const short = (s, n = 80) => {
     const t = String(s ?? '').replace(/\s+/g, ' ').trim();

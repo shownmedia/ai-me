@@ -76,6 +76,9 @@ export const config = {
   // its last activity; CLEANUP_AFTER_MIN=off leaves threads alone ("clean up" in a thread still works).
   // Deleting the owner's messages needs their user token (xoxp, user scope chat:write); without it nothing is cleaned.
   userToken: env.SLACK_USER_TOKEN || '',
+  // One bot message per thread: the status line and every answer edit it instead of posting new messages.
+  // Edits don't notify, so the ✅ on your ask is the done signal. EDIT_IN_PLACE=1 turns it on.
+  editInPlace: /^(1|true|yes)$/i.test(env.EDIT_IN_PLACE || ''),
   cleanupAfterMin: /^(off|no|false)$/i.test(env.CLEANUP_AFTER_MIN || '') ? null : Math.max(1, Number(env.CLEANUP_AFTER_MIN || 60)),
   lowercase: /^(1|true|yes)$/i.test(env.LOWERCASE || ''),
   // Hour (local, 0-23) of the daily lessons DM; LESSONS_HOUR=off turns it off.

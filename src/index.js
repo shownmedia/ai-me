@@ -16,7 +16,7 @@ import { createStore } from './store.js';
 import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
-import { toMrkdwn, chunk, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
+import { toMrkdwn, chunk, editedReply, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
 import { loadSystemPrompt, guestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
@@ -283,8 +283,17 @@ async function runJob(k, t) {
   // Restarts are invisible to the owner: a resumed job just carries on under the same status line.
   const opening = msgs.some((m) => m.caughtUp && !m.resumed) ? 'Sorry for the wait, I was offline. On it now.' : "Yes, I'm on it.";
   if (t.reactTs) safe(() => client.reactions.remove({ channel: t.channel, timestamp: t.reactTs, name: 'hourglass_flowing_sand' }), 'unreact');
+  // EDIT_IN_PLACE: the thread's one message shows the status under what it already says.
+  const inPlace = config.editInPlace && !t.guest;
+  if (inPlace && !t.statusTs && t.replyTs) Object.assign(t, { statusTs: t.replyTs, statusBase: t.replyText || '' });
+  const withBase = (s) => (t.statusBase ? `${t.statusBase}\n\n${s}` : s);
+  if (t.statusBase && t.statusTs) {
+    // Show "on it" under the last answer now; if that message is gone, start a fresh one.
+    const shown = await client.chat.update({ channel: t.channel, ts: t.statusTs, text: withBase(opening) }).catch(() => null);
+    if (!shown) Object.assign(t, { statusTs: null, statusBase: null, replyTs: null, replyText: null });
+  }
   const status = t.statusTs
-    ? { ts: t.statusTs } // an interrupted run already has a status line: reuse it
+    ? { ts: t.statusTs } // an interrupted run (or the thread's one message) already has a status line: reuse it
     : await safe(() => client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: opening }), 'post');
   t.statusTs = status?.ts || null;
   store.save();
@@ -306,7 +315,7 @@ async function runJob(k, t) {
     const text = left <= 0 ? `${opening} Taking a bit longer than I thought, still going.` : `${opening} ${first ? 'Should take about' : 'About'} ${humanMinutes(left)}${first ? '.' : ' left.'}`;
     if (text === shown) return;
     shown = text;
-    safe(() => client.chat.update({ channel: t.channel, ts: status.ts, text }), 'update');
+    safe(() => client.chat.update({ channel: t.channel, ts: status.ts, text: withBase(text) }), 'update');
   };
   const estimate = estimateTask({ bin: config.claudeBin, task: msgs.map((m) => m.text).join('\n') });
   estimate.then((e) => {
@@ -404,6 +413,8 @@ async function runJob(k, t) {
     ok: res.ok && !res.timedOut && !res.stopped,
     msgTs: [t.reactTs || msgs[0]?.ts].filter((ts) => /^\d+\.\d+$/.test(ts || '')),
     statusTs: status?.ts,
+    inPlace: inPlace && Boolean(status?.ts),
+    base: t.statusBase || '',
     footer,
     posted: 0,
     files,
@@ -412,6 +423,7 @@ async function runJob(k, t) {
   };
   t.inflight = null;
   t.statusTs = null;
+  t.statusBase = null;
   if (t.lastRun) t.lastRun.end = Date.now();
   t.lastActivity = Date.now();
   store.save();
@@ -436,7 +448,38 @@ async function deliver(t) {
 async function deliverOnce(t) {
   const f = t.finalPending;
   if (!f) return true;
-  try {
+  if (f.inPlace) {
+    try {
+      if (!f.edited) {
+        // Edits don't notify, so a run that needs a look says so at the top of its answer.
+        const answer = `${f.ok ? '' : `⚠️ needs a look · ${f.footer || ''}\n`}${toMrkdwn(f.text) || '_(finished with no reply text)_'}`;
+        const { edit, extra } = editedReply(f.base, answer);
+        await client.chat.update({ channel: t.channel, ts: f.statusTs, text: edit });
+        Object.assign(f, { edited: true, extra });
+        Object.assign(t, { replyTs: f.statusTs, replyText: edit });
+        store.save();
+      }
+      for (let i = f.posted; i < f.extra.length; i++) {
+        const r = await client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: f.extra[i], unfurl_links: false, unfurl_media: false });
+        f.posted = i + 1;
+        Object.assign(t, { replyTs: r.ts, replyText: f.extra[i] });
+        store.save();
+      }
+    } catch (err) {
+      const code = err.data?.error || err.message;
+      log(`[deliver] ${keyOf(t.channel, t.threadTs)} will retry: ${code}`);
+      // The message is gone or can't be edited any more: post the answer as a new message instead.
+      if (!f.edited && /message_not_found|cant_update_message|edit_window_closed|msg_too_long/.test(code)) {
+        Object.assign(f, { inPlace: false, statusTs: null });
+        Object.assign(t, { replyTs: null, replyText: null });
+        store.save();
+      } else if (f.edited && /not_in_channel|channel_not_found|is_archived|channel_archived|not_allowed|invalid_auth/.test(code)) {
+        f.posted = f.extra.length; // the rest can't be posted here, ever: don't block the thread on it
+        store.save();
+      } else return false;
+    }
+  }
+  if (!f.inPlace) try {
     const parts = chunk(`<@${t.guest && t.lastAsker ? t.lastAsker : config.ownerId}> ${toMrkdwn(f.text)}`);
     for (let i = f.posted; i < parts.length; i++) {
       await client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: parts[i], unfurl_links: false, unfurl_media: false });
@@ -448,7 +491,7 @@ async function deliverOnce(t) {
     return false;
   }
   if (!(await uploadFiles(t, f))) return false;
-  if (f.statusTs) {
+  if (f.statusTs && !f.inPlace) {
     await safe(() => client.chat.update({ channel: t.channel, ts: f.statusTs, text: f.ok ? `Done ✅ · ${f.footer}` : `Finished, needs a look ⚠️ · ${f.footer}` }), 'update');
   }
   for (const ts of f.msgTs) {
@@ -506,7 +549,9 @@ function pump() {
       .catch(async (err) => {
         // Last-resort net: whatever happened, the thread still gets an answer.
         log(`[job] ${k} crashed:`, err.stack || err.message);
-        t.finalPending ??= { text: `Something broke on my side before I could finish: ${err.message}. Reply here to retry.`, ok: false, msgTs: [t.reactTs].filter(Boolean), posted: 0 };
+        const inPlace = Boolean(config.editInPlace && !t.guest && t.statusTs);
+        t.finalPending ??= { text: `Something broke on my side before I could finish: ${err.message}. Reply here to retry.`, ok: false, msgTs: [t.reactTs].filter(Boolean), posted: 0, inPlace, statusTs: inPlace ? t.statusTs : undefined, base: t.statusBase || '' };
+        Object.assign(t, { statusTs: null, statusBase: null });
         t.inflight = null;
         // Close the run window, or later asks in this thread would be taken for echoes of it.
         if (t.lastRun && !t.lastRun.end) t.lastRun.end = Date.now();

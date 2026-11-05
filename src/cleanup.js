@@ -143,7 +143,9 @@ export async function runCleanup({ client, config, t, botUserId, save = () => {}
     // Editing is safe to repeat, so a restart right after it just edits again.
     await client.chat.update({ channel: t.channel, ts: c.plan.edit, text: c.summary });
     c.edited = true;
+    // With EDIT_IN_PLACE, later answers in this thread are added under the summary.
     t.summaryTs = c.plan.edit;
+    if (config.editInPlace) Object.assign(t, { replyTs: c.plan.edit, replyText: c.summary });
     save();
   }
   for (const d of c.plan.delete) {
