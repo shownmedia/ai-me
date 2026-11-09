@@ -73,6 +73,18 @@ export function editedReply(base, answer, max = 3500) {
   return base ? { edit: base, extra: parts } : { edit: parts[0], extra: parts.slice(1) };
 }
 
+// EDIT_IN_PLACE: status, revisions and small follow-ups edit the thread's one message, but a finished
+// deliverable gets a new message (edits don't notify). The run asks for one with a first line `[new]`;
+// a Google Doc/Drive file the message didn't link yet counts as finished too.
+const NEW_MARK = /^\s*\[new\]\s*\n?/i;
+const DRIVE_ID = /https?:\/\/(?:docs|drive)\.google\.com\/\S*?(?:\/d\/|[?&]id=|\/folders\/)([\w-]{20,})/g;
+export function newMessage(text, base = '') {
+  const s = String(text ?? '');
+  if (NEW_MARK.test(s)) return { text: s.replace(NEW_MARK, ''), fresh: true };
+  const seen = new Set([...String(base).matchAll(DRIVE_ID)].map((m) => m[1]));
+  return { text: s, fresh: [...s.matchAll(DRIVE_ID)].some((m) => !seen.has(m[1])) };
+}
+
 export function describeTool(name, input = {}) {
   const short = (s, n = 80) => {
     const t = String(s ?? '').replace(/\s+/g, ' ').trim();

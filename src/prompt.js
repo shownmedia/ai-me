@@ -99,5 +99,6 @@ export function buildPrompt(config, t, msgs, context = '') {
   parts.push(`${context ? `${config.ownerName}'s ask (tagging you):\n` : ''}${ask.join('\n\n')}`);
   if (t.permalink) parts.push(`(Slack thread: ${t.permalink})`);
   parts.push(t.channel.startsWith('D') ? '(This is a DM: use the DM reply format.)' : '(This is a channel: use the channel reply format.)');
+  if (config.editInPlace && !t.guest) parts.push('(Replies in this thread edit one message, which does not notify. When this turn finishes something (the doc, video, Drive link, shipped PR or final answer is ready) or has news worth a ping, make the first line of your final message `[new]` so it posts as a new message. Status, revisions, small fixes and back-and-forth stay as edits.)');
   return parts.join('\n\n');
 }

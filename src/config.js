@@ -72,9 +72,11 @@ export const config = {
   workingEmoji: env.WORKING_EMOJI || 'eyes',
   finishedEmoji: env.FINISHED_EMOJI || 'white_check_mark',
   doneEmoji: env.DONE_EMOJI || '',
-  // Clean Up (src/cleanup.js): a finished thread folds into one summary message this many minutes after
-  // its last activity; CLEANUP_AFTER_MIN=off leaves threads alone ("clean up" in a thread still works).
-  // Deleting the owner's messages needs their user token (xoxp, user scope chat:write); without it nothing is cleaned.
+  // Clean Up (src/cleanup.js) deletes messages, so it's off unless CLEAN_UP=1. Then a finished thread folds
+  // into one summary message CLEANUP_AFTER_MIN after its last activity; CLEANUP_AFTER_MIN=off leaves threads
+  // alone ("clean up" in a thread still works). Deleting the owner's messages needs their user token (xoxp,
+  // user scope chat:write); without it nothing is cleaned.
+  cleanUp: /^(1|true|yes|on)$/i.test(env.CLEAN_UP || ''),
   userToken: env.SLACK_USER_TOKEN || '',
   // One bot message per thread: the status line and every answer edit it instead of posting new messages.
   // Edits don't notify, so the ✅ on your ask is the done signal. EDIT_IN_PLACE=1 turns it on.
@@ -121,6 +123,15 @@ export const config = {
     // Slack ids never tagged in a sweeper message (on top of the names in src/sweeper.js NEVER_TAG).
     neverTag: String(env.SWEEPER_NEVER_TAG || '').split(',').map((s) => s.trim()).filter(Boolean),
     timeoutMin: Number(env.SWEEPER_TIMEOUT_MIN || 90),
+  },
+  // Weekly priorities (src/priorities.js): off unless PRIORITIES_ENABLED=1. Sundays at PRIORITIES_HOUR (New York),
+  // the owner gets a suggested priorities message for their PM/EA (PRIORITIES_FOR_NAME, DM channel PRIORITIES_DM).
+  priorities: {
+    enabled: /^(1|true|yes)$/i.test(env.PRIORITIES_ENABLED || ''),
+    hour: Number(env.PRIORITIES_HOUR || 11),
+    forName: env.PRIORITIES_FOR_NAME || 'your PM',
+    dm: env.PRIORITIES_DM || '',
+    timeoutMin: Number(env.PRIORITIES_TIMEOUT_MIN || 60),
   },
   // Next steps (src/next-steps.js): off unless NEXT_STEPS_ENABLED=1. After a Fathom 1:1 with a teammate, their
   // action items go to them in a DM from the owner's account; drafts only until NEXT_STEPS_REVIEW_UNTIL (YYYY-MM-DD).

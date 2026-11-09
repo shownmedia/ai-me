@@ -16,7 +16,7 @@ import { createStore } from './store.js';
 import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
-import { toMrkdwn, chunk, editedReply, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
+import { toMrkdwn, chunk, editedReply, newMessage, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
 import { loadSystemPrompt, guestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
@@ -155,7 +155,7 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.users };
   if (scope?.thread) Object.assign(t, scope.thread);
   if (scope?.opus && !t.modelPinned) t.model = config.opusModel;
-  if (user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
+  if (config.cleanUp && user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
   // Never sweep up older thread messages from before we were asked.
   if (Number(ts) > Number(t.lastReplySeen || 0)) t.lastReplySeen = ts;
   // Drop our own mention and the "Sent using @Claude" footer Slack adds to messages sent via its connector.
@@ -171,6 +171,15 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   // "clean up": fold this thread into one summary message now (src/cleanup.js), no Claude run.
   // A short "that's good" in a thread after a finished answer means the same thing.
   const doneReply = Boolean(threadTs && config.userToken && t.closable && !running.has(k) && !t.pending.length && !t.inflight && !t.finalPending && DONE_REPLY.test(clean));
+  if ((CLEANUP_COMMAND.test(clean) || doneReply) && !scope && !config.cleanUp) {
+    // Clean Up is off (the default): nothing is ever deleted and nothing new is posted. A "that's good"
+    // gets a ✅ and no run; "clean up" gets the deny emoji (CLEAN_UP=1 turns it on).
+    if (threadTs) t.closable = false;
+    else delete state.threads[k];
+    store.save();
+    await safe(() => client.reactions.add({ channel, timestamp: ts, name: doneReply ? config.finishedEmoji : config.denyEmoji }), 'react');
+    return;
+  }
   if ((CLEANUP_COMMAND.test(clean) || doneReply) && !scope) {
     if (!config.userToken) {
       store.save();
@@ -411,9 +420,12 @@ async function runJob(k, t) {
   if (skipped.length) text += `\n\n_Couldn't attach: ${skipped.join('; ')}_`;
   if (res.denials?.length) text += `\n\n_Blocked by permissions: ${[...new Set(res.denials.map((d) => d.tool_name))].join(', ')}_`;
 
+  const ok = res.ok && !res.timedOut && !res.stopped;
+  const next = newMessage(text, t.statusBase || '');
   t.finalPending = {
-    text,
-    ok: res.ok && !res.timedOut && !res.stopped,
+    text: next.text,
+    ok,
+    fresh: inPlace && ok && next.fresh,
     msgTs: [t.reactTs || msgs[0]?.ts].filter((ts) => /^\d+\.\d+$/.test(ts || '')),
     statusTs: status?.ts,
     inPlace: inPlace && Boolean(status?.ts),
@@ -451,6 +463,12 @@ async function deliver(t) {
 async function deliverOnce(t) {
   const f = t.finalPending;
   if (!f) return true;
+  if (f.inPlace && f.fresh && !f.edited) {
+    // A finished deliverable goes in a new message so it notifies. Once it's posted, the old message goes
+    // back to what it said (or, if it was only the status line, points down to the answer). Nothing is deleted.
+    Object.assign(f, { inPlace: false, unstatusTs: f.statusTs, statusTs: null, track: true });
+    store.save();
+  }
   if (f.inPlace) {
     try {
       if (!f.edited) {
@@ -485,8 +503,14 @@ async function deliverOnce(t) {
   if (!f.inPlace) try {
     const parts = chunk(`<@${t.guest && t.lastAsker ? t.lastAsker : config.ownerId}> ${toMrkdwn(f.text)}`);
     for (let i = f.posted; i < parts.length; i++) {
-      await client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: parts[i], unfurl_links: false, unfurl_media: false });
+      const r = await client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: parts[i], unfurl_links: false, unfurl_media: false });
       f.posted = i + 1;
+      if (f.track) Object.assign(t, { replyTs: r.ts, replyText: parts[i] }); // later edits go to the new message
+      store.save();
+    }
+    if (f.unstatusTs) {
+      await safe(() => client.chat.update({ channel: t.channel, ts: f.unstatusTs, text: f.base || 'done ↓' }), 'unstatus');
+      f.unstatusTs = null;
       store.save();
     }
   } catch (err) {
@@ -577,7 +601,7 @@ function pump() {
 let cleaning = false;
 const cleaningKeys = new Set();
 async function cleanupTick() {
-  if (cleaning || !config.userToken) return;
+  if (cleaning || !config.cleanUp || !config.userToken) return;
   cleaning = true;
   try {
     for (const [k, t] of Object.entries(state.threads)) {
@@ -687,6 +711,7 @@ async function main() {
   if (scopes.length && !scopes.includes('files:write')) log('[boot] no files:write scope: renders and images can\'t be uploaded to threads (add it in the Slack app, then reinstall)');
   teamId = auth.team_id;
   // Clean Up deletes the owner's messages with their user token: it has to be theirs and allowed to.
+  if (config.userToken && !config.cleanUp) log('[boot] Clean Up is off (it deletes messages): set CLEAN_UP=1 to turn it on');
   if (config.userToken) {
     const who = await client.auth.test({ token: config.userToken }).catch((err) => ({ error: err.data?.error || err.message }));
     if (who.user_id !== config.ownerId) {

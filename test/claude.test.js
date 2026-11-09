@@ -202,3 +202,13 @@ test('edit in place: answers stack under the message until it would overflow', (
   assert.equal(editedReply('', long, 30).extra.length >= 1, true);
   assert.deepEqual(editedReply('', ''), { edit: '', extra: [] }, 'callers must never pass an empty answer');
 });
+
+test('newMessage: [new] or a Drive link not linked yet posts a new message', async () => {
+  const { newMessage } = await import('../src/format.js');
+  assert.deepEqual(newMessage('[new]\n- done: <https://x.com|x>'), { text: '- done: <https://x.com|x>', fresh: true });
+  assert.equal(newMessage('- fixed the typo').fresh, false);
+  const doc = 'https://docs.google.com/document/d/1VRqdY_YNx4kwtz8SHH0IhCDsTusIra3EcQ2GXfVyIiI/edit';
+  assert.equal(newMessage(`- doc: <${doc}|doc>`).fresh, true);
+  assert.equal(newMessage(`- revised: <${doc}?tab=t.abc|doc>`, `- doc: <${doc}|doc>`).fresh, false);
+  assert.equal(newMessage('- video: https://drive.google.com/file/d/1Kb2Rq0bsrGoWn-BsJK3vNRJPx9_ow5Do/view').fresh, true);
+});

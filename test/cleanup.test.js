@@ -194,3 +194,15 @@ test('"clean up" in a thread from before Clean Up shipped finds its asks in the 
   assert.equal(calls.edited[0].ts, '1.2');
   assert.deepEqual(calls.deleted.map((d) => d.ts), ['1.1', '1.4', '1.5', '1.6'], 'the root and the teammate stay');
 });
+
+test('Clean Up is off unless CLEAN_UP=1, so nothing is deleted by default', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const cleanUp = (v) => {
+    const env = { ...process.env, SLACK_BOT_TOKEN: 'x', SLACK_APP_TOKEN: 'x', OWNER_SLACK_ID: 'U1', CLAUDE_BIN: 'claude' };
+    if (v == null) delete env.CLEAN_UP; else env.CLEAN_UP = v;
+    return execFileSync(process.execPath, ['--input-type=module', '-e', "import(process.argv[1]).then((m) => process.stdout.write(String(m.config.cleanUp)))", new URL('../src/config.js', import.meta.url).href], { env, encoding: 'utf8' });
+  };
+  assert.equal(cleanUp(undefined), 'false');
+  assert.equal(cleanUp('1'), 'true');
+  assert.equal(cleanUp('off'), 'false');
+});
