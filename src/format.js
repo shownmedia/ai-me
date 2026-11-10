@@ -175,7 +175,10 @@ export function threadsWithNewReplies(msgs = [], since, tracked = () => false) {
 export function guestThread(guests, channel, threadTs) {
   return (Array.isArray(guests) ? guests : []).find((g) => g.channel === channel && g.thread_ts === threadTs) || null;
 }
+// An entry with `anywhere: true` (and no channel) lets its users task the bot in any DM, channel or thread,
+// read-only only: without `limited` it is ignored, since nothing else scopes a run started anywhere.
 export function guestFor(guests, channel, threadTs, user) {
-  const g = guestThread(guests, channel, threadTs);
-  return g && (g.users || []).includes(user) ? g : null;
+  const g = threadTs ? guestThread(guests, channel, threadTs) : null;
+  if (g) return (g.users || []).includes(user) ? g : null;
+  return (Array.isArray(guests) ? guests : []).find((e) => e.anywhere && e.limited && (e.users || []).includes(user)) || null;
 }

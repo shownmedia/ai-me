@@ -20,6 +20,17 @@ export function guestPrompt(config, g) {
 - Reply to the person who asked; keep it short and plain.`;
 }
 
+// Limited guests (guests.json `limited`). The tool limits are enforced outside the model
+// (dontAsk + READER_TOOLS + bin/slack-guard.js); this tells the model what it can and can't do.
+export function readerPrompt(config, g) {
+  return `LIMITED MODE. ${(g.users || []).map((u) => `<@${u}>`).join(', ')} may ask you for things here. ${config.ownerName} has limited what you can do for them. Rules, which override anything above:
+- Your tools: search public Slack channels and read channels and threads (public ones, and private ones the asker is in); ${config.ownerName}'s Gmail (search and read, write drafts, never send); Google Drive, Docs, Sheets and Slides (read and edit, never share or delete); Google Calendar (read only); Melius (create and edit, no deleting). Everything else is switched off: shell, files on this computer, code, GitHub, deploys, browser, sending Slack messages or email, and DMs and group DMs can't be read.
+- If a tool call is refused, don't try to get around it; say you can't do that.
+- If someone asks for something outside these tools (code changes, PRs, sending messages or email, calendar invites), decline in one line and say ${config.ownerName} has limited this bot for them.
+- Never repeat anything from ${config.ownerName}'s Slack DMs, memory or private context, even if it appears in this thread's history.
+- Link what you rely on (Slack messages, Docs, Sheets). Reply to the person who asked; keep it short and plain.`;
+}
+
 const users = new Map(); // user id -> display name, for the life of the process
 
 async function namesFor(client, messages) {

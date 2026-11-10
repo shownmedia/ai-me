@@ -7,7 +7,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { describeTool } from './format.js';
+import { GUEST_TOOLS } from './slack-guard.js';
 
 // Windows can't spawn npm's claude.cmd without a shell (and a shell would let Slack text
 // inject commands), so an npm install resolves to [node, the package's own entry point].
@@ -51,13 +53,26 @@ export const SELF_PROTECT = [
   'Bash(taskkill*)', 'Bash(schtasks*)', 'Bash(*Stop-Process*)', 'Bash(*Unregister-ScheduledTask*)', 'Bash(*install.ps1*)',
 ];
 
+// Limited guest runs (guests.json `limited`): dontAsk denies every tool not listed here, so no shell, files,
+// browser, code or Slack sends. Slack search is public channels only; channel and thread reads go through
+// bin/slack-guard.js, which refuses DMs, group DMs and private channels the asker isn't in, and also gates
+// the Google and Melius tools (GUEST_TOOLS in src/slack-guard.js).
+export const READER_TOOLS = ['slack_search_public', 'slack_read_channel', 'slack_read_thread', 'slack_search_users', 'slack_read_user_profile']
+  .map((t) => `mcp__claude_ai_Slack__${t}`)
+  .concat(GUEST_TOOLS, ['mcp__claude_ai_Melius', 'ToolSearch', 'Read', 'Grep']);
+export const READER_DENY = ['Bash', 'Glob', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool'];
+const guard = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'slack-guard.js');
+export const readerSettings = () => JSON.stringify({
+  hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: `"${process.execPath}" "${guard}"`, timeout: 30 }] }] },
+});
+
 // Environment for every Slack-driven run.
 // - Headless -p runs end when the model stops talking, so a background task would never report back.
 // - Parallel runs each start their own Playwright MCP; without isolation they fight over one browser profile
 //   ("Browser is already in use"). Logged-in browsing goes through Claude in Chrome instead.
 export const RUN_ENV = { AI_SLACK_BOT: '1', CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1', BASH_DEFAULT_TIMEOUT_MS: '600000', PLAYWRIGHT_MCP_ISOLATED: 'true' };
 
-export function buildArgs({ prompt, sessionId, resume, model, permissionMode, systemPrompt, maxBudgetUsd, chrome = false, disallowedTools = [], extraArgs = '' }) {
+export function buildArgs({ prompt, sessionId, resume, model, permissionMode, systemPrompt, maxBudgetUsd, chrome = false, disallowedTools = [], settings, extraArgs = '' }) {
   // No model means Claude Code's own default (whatever `claude` uses in a terminal).
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(model ? ['--model', model] : [])];
   if (permissionMode === 'bypassPermissions') args.push('--dangerously-skip-permissions');
@@ -68,6 +83,7 @@ export function buildArgs({ prompt, sessionId, resume, model, permissionMode, sy
   // -p runs skip Claude in Chrome unless asked, so the bot couldn't browse as the owner like a terminal session can.
   if (chrome) args.push('--chrome');
   if (disallowedTools.length) args.push('--disallowedTools', ...disallowedTools);
+  if (settings) args.push('--settings', settings);
   args.push(...extraArgs.split(' ').filter(Boolean));
   return args;
 }

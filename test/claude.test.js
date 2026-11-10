@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
-import { runClaude, buildArgs, estimateTask, parseEstimate, windowsClaude } from '../src/claude.js';
+import { runClaude, buildArgs, estimateTask, parseEstimate, windowsClaude, READER_TOOLS, readerSettings } from '../src/claude.js';
+import { slackGuard } from '../src/slack-guard.js';
 import { editedReply, toMrkdwn, chunk, describeTool, lowercase, parseLinks, commsText, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from '../src/format.js';
 
 const bin = [process.execPath, path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-claude.js')];
@@ -191,6 +192,61 @@ test('guest threads: only listed users, only in the listed thread', () => {
   assert.equal(guestFor(g, 'C2', '1.2', 'UA'), null);
   assert.equal(guestThread(g, 'C1', '1.2')?.project, 'p');
   assert.equal(guestFor('not a list', 'C1', '1.2', 'UA'), null);
+});
+
+test('anywhere guests: any DM, channel or thread, only listed users; thread entries still win', () => {
+  const g = [{ channel: 'C1', thread_ts: '1.2', users: ['UB'], workdir: '~/p' }, { anywhere: true, users: ['UM'], limited: true }];
+  assert.equal(guestFor(g, 'D9', undefined, 'UM')?.limited, true);
+  assert.equal(guestFor(g, 'C7', '5.5', 'UM')?.limited, true);
+  assert.equal(guestFor(g, 'C1', '1.2', 'UM'), null, 'a listed thread only takes its own users');
+  assert.equal(guestFor(g, 'D9', undefined, 'UX'), null);
+  assert.equal(guestThread(g, 'D9', '5.5'), null, 'anywhere entries never scope the owner');
+  assert.equal(guestFor([{ anywhere: true, users: ['UM'] }], 'D9', undefined, 'UM'), null, 'anywhere without limited is ignored');
+});
+
+test('limited runs: --settings is passed through, only the allowed tools', () => {
+  const args = buildArgs({ prompt: 'p', sessionId: 's', permissionMode: 'dontAsk', settings: '{"hooks":{}}' });
+  assert.deepEqual(args.slice(args.indexOf('--settings'), args.indexOf('--settings') + 2), ['--settings', '{"hooks":{}}']);
+  assert.ok(!buildArgs({ prompt: 'p', sessionId: 's', permissionMode: 'dontAsk' }).includes('--settings'));
+  assert.ok(JSON.parse(readerSettings()).hooks.PreToolUse[0].hooks[0].command.includes('slack-guard.js'));
+  assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'mcp__claude_ai_Melius'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
+  assert.ok(!READER_TOOLS.some((t) => /send_message|Gmail__(send|forward|reply|trash)|share_file|trash_file|create_event|update_event|delete/.test(t)), 'no sends, shares, invites or deletes');
+});
+
+test('slack guard: public channels and the asker\'s private channels only, never DMs', async () => {
+  const chans = { C1: { is_private: false }, G2: { is_private: true }, C3: { is_private: true }, C4: { is_mpim: true } };
+  const slack = { info: async (id) => chans[id] || null, members: async (id) => (id === 'G2' ? ['UM', 'UX'] : ['UX']) };
+  const call = (tool, input = {}) => slackGuard({ tool_name: `mcp__claude_ai_Slack__${tool}`, tool_input: input }, ['UM'], slack);
+  assert.equal(await call('slack_search_public', { query: 'x' }), null);
+  assert.equal(await call('slack_search_public', { query: 'x', content_types: 'messages' }), null);
+  assert.match(await call('slack_search_public', { query: 'x', content_types: 'messages,files' }), /File search/);
+  assert.equal(await slackGuard({ tool_name: 'ToolSearch', tool_input: {} }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'ReadMcpResourceTool', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.match(await slackGuard({ tool_name: 'Bash', tool_input: {} }, ['UM'], slack), /not available/);
+  const saved = path.join(os.homedir(), '.claude/projects/-private-var-T-ai-slack-reader/eab9d938-0dbe/tool-results/doc.txt');
+  assert.equal(await slackGuard({ tool_name: 'Read', tool_input: { file_path: saved } }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'Read', tool_input: { file_path: path.join(os.homedir(), '.shown/env') } }, ['UM'], slack), /only works/);
+  assert.match(await slackGuard({ tool_name: 'Read', tool_input: { file_path: `${saved}/../../../../-Users-mitchell/memory/MEMORY.md` } }, ['UM'], slack), /only works/);
+  assert.match(await slackGuard({ tool_name: 'Grep', tool_input: { pattern: 'x' } }, ['UM'], slack), /only works/);
+  assert.match(await slackGuard({ tool_name: 'Read', tool_input: { file_path: path.join(os.homedir(), '.claude/projects/-Users-mitchell/x/tool-results/a.txt') } }, ['UM'], slack), /only works/);
+  assert.equal(await call('slack_read_channel', { channel_id: 'C1' }), null);
+  assert.equal(await call('slack_read_thread', { channel_id: 'G2', message_ts: '1.2' }), null);
+  assert.match(await call('slack_read_channel', { channel_id: 'C3' }), /not in/);
+  assert.match(await call('slack_read_channel', { channel_id: 'C4' }), /DMs/);
+  assert.match(await call('slack_read_channel', { channel_id: 'D123' }), /DMs/);
+  assert.match(await call('slack_read_channel', { channel_id: 'U0OWNER01' }), /DMs/, 'a user id reads a DM');
+  assert.match(await call('slack_read_channel', { channel_id: 'C9' }), /not a channel/, 'unknown or bot not in it');
+  assert.match(await call('slack_search_public_and_private', { query: 'x' }), /not available/);
+  assert.match(await call('slack_send_message', { channel_id: 'C1' }), /not available/);
+  assert.equal(await slackGuard({ tool_name: 'mcp__claude_ai_Gmail__search_threads', tool_input: {} }, ['UM'], slack), null);
+  assert.equal(await slackGuard({ tool_name: 'mcp__claude_ai_Google_Docs__read_doc', tool_input: {} }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Gmail__send_message', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Google_Drive__share_file', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Google_Calendar__create_event', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.equal(await slackGuard({ tool_name: 'mcp__claude_ai_Melius__node_create', tool_input: {} }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Melius__canvas_delete', tool_input: {} }, ['UM'], slack), /off/);
+  assert.match(await slackGuard({ tool_name: 'mcp__shownroom__set_ticket_status', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Slack__slack_read_channel', tool_input: { channel_id: 'G2' } }, [], slack), /not in/, 'no readers fails closed');
 });
 
 test('edit in place: answers stack under the message until it would overflow', () => {

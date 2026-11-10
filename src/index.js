@@ -9,15 +9,16 @@
 //   - messages sent while the bot was offline are found by a periodic catch-up scan
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import bolt from '@slack/bolt';
 import { config } from './config.js';
 import { createStore } from './store.js';
-import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV } from './claude.js';
+import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
 import { toMrkdwn, chunk, editedReply, newMessage, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
-import { loadSystemPrompt, guestPrompt, buildPrompt, gatherContext } from './prompt.js';
+import { loadSystemPrompt, guestPrompt, readerPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
 import { CLEANUP_COMMAND, DONE_REPLY, ASKS_BACK, cleanupDue, runCleanup } from './cleanup.js';
@@ -105,6 +106,13 @@ function addressedToBot({ channel, text = '' }) {
   return Boolean(botUserId && text.includes(`<@${botUserId}>`));
 }
 
+// Limited runs start in an empty folder outside the home folder, so no CLAUDE.md or memory index above it is loaded.
+function readerDir() {
+  const dir = path.join(os.tmpdir(), 'ai-slack-reader');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // Guest threads: the owner can let named teammates task the bot in one specific thread, scoped to one
 // project folder. Listed in guests.json at the repo root (re-read on every message, so no restart):
 // [{ "channel": "C…", "thread_ts": "123.456", "users": ["U…"], "workdir": "~/project", "project": "what they may work on" }]
@@ -120,7 +128,8 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   if (store.seen(ts)) return;
   store.markSeen(ts);
   // Add-on threads (recaps, game tape review) have their own rules for who may ask.
-  const guest = addons.scope(channel, user, threadTs) || (user !== config.ownerId && threadTs ? guestFor(loadGuests(), channel, threadTs, user) : null);
+  const guests = loadGuests();
+  const guest = addons.scope(channel, user, threadTs) || (user !== config.ownerId ? guestFor(guests, channel, threadTs, user) : null);
   if (user !== config.ownerId && !guest) {
     store.save();
     // Someone else asked for something: tell only them, quietly, and mark the message.
@@ -151,8 +160,8 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   t.lastActivity = Date.now();
   t.lastAsker = user;
   // A guest thread stays scoped to its project for everyone who asks in it, the owner included.
-  const scope = guest || guestThread(loadGuests(), channel, threadTs || ts);
-  if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.users };
+  const scope = guest || guestThread(guests, channel, threadTs || ts);
+  if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.anywhere ? [...new Set([...(t.guest?.users || []), user])] : scope.users, limited: Boolean(scope.limited || t.guest?.limited) };
   if (scope?.thread) Object.assign(t, scope.thread);
   if (scope?.opus && !t.modelPinned) t.model = config.opusModel;
   if (config.cleanUp && user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
@@ -354,23 +363,36 @@ async function runJob(k, t) {
   const outbox = outboxDir(config.dataDir, t.channel, t.threadTs);
   prepareOutbox(outbox, { resumed: msgs.some((m) => m.resumed) });
 
+  // Limited guests (guests.json `limited`): only the tools in READER_TOOLS, each checked by the guard hook.
+  // A thread's first read-only run starts a fresh session with the whole thread as context, so an earlier
+  // unrestricted run's transcript stays out of it.
+  const limited = Boolean(t.guest?.limited);
+  if (limited && !t.readerSession) {
+    t.sessionId = crypto.randomUUID();
+    t.started = false;
+    delete t.contextTs;
+    t.readerSession = true;
+    store.save();
+  }
   const context = await gatherContext(client, t, msgs, { botUserId, ownerId: config.ownerId, ownerName: config.ownerName, log });
   const prompt = buildPrompt(config, t, msgs, context.text);
 
   const attempt = (resume) => {
     const run = runClaude({
       bin: config.claudeBin,
-      cwd: t.guest?.workdir ? t.guest.workdir.replace(/^~/, process.env.HOME || '') : config.workdir,
+      cwd: limited ? readerDir() : t.guest?.workdir ? t.guest.workdir.replace(/^~/, process.env.HOME || '') : config.workdir,
       prompt,
       sessionId: t.sessionId,
       resume,
       model: t.model,
-      permissionMode: config.permissionMode,
-      systemPrompt: [systemPrompt, addons.systemPrompt(t) || (t.guest ? guestPrompt(config, t.guest) : '')].filter(Boolean).join('\n\n'),
+      permissionMode: limited ? 'dontAsk' : config.permissionMode,
+      systemPrompt: [systemPrompt, limited ? readerPrompt(config, t.guest) : addons.systemPrompt(t) || (t.guest ? guestPrompt(config, t.guest) : '')].filter(Boolean).join('\n\n'),
       maxBudgetUsd: config.maxBudgetUsd,
-      chrome: config.chrome,
-      extraArgs: config.claudeExtraArgs,
-      disallowedTools: SELF_PROTECT,
+      chrome: limited ? false : config.chrome,
+      // `--setting-sources local`: the owner's global CLAUDE.md, plugins, hooks and allow rules stay out (the temp folder has no local ones).
+      extraArgs: limited ? `--allowedTools ${READER_TOOLS.join(',')} --setting-sources local` : config.claudeExtraArgs,
+      settings: limited ? readerSettings() : undefined,
+      disallowedTools: limited ? [...SELF_PROTECT, ...READER_DENY] : SELF_PROTECT,
       timeoutMin: config.timeoutMin,
       onProgress,
       onSessionStart: () => {
@@ -379,7 +401,7 @@ async function runJob(k, t) {
           store.save();
         }
       },
-      env: { ...RUN_ENV, AI_SLACK_OUTBOX: outbox },
+      env: { ...RUN_ENV, AI_SLACK_OUTBOX: outbox, ...(limited ? { AI_SLACK_READERS: ((t.guest.users || []).includes(t.lastAsker) ? [t.lastAsker] : t.guest.users || []).join(',') } : {}) },
     });
     running.get(k).stop = run.stop;
     return run.promise;
