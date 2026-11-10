@@ -62,8 +62,13 @@ export const READER_TOOLS = ['slack_search_public', 'slack_read_channel', 'slack
   .concat(GUEST_TOOLS, ['mcp__claude_ai_Melius', 'ToolSearch', 'Read', 'Grep']);
 export const READER_DENY = ['Bash', 'Glob', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool'];
 const guard = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'slack-guard.js');
+const shareCreated = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'share-created.js');
 export const readerSettings = () => JSON.stringify({
-  hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: `"${process.execPath}" "${guard}"`, timeout: 30 }] }] },
+  hooks: {
+    PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: `"${process.execPath}" "${guard}"`, timeout: 30 }] }],
+    // Files the run makes are shared with the guests (bin/share-created.js).
+    PostToolUse: [{ matcher: 'mcp__claude_ai_Google_Drive__(create_file|copy_file)', hooks: [{ type: 'command', command: `"${process.execPath}" "${shareCreated}"`, timeout: 90 }] }],
+  },
 });
 
 // Environment for every Slack-driven run.

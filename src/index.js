@@ -161,7 +161,7 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   t.lastAsker = user;
   // A guest thread stays scoped to its project for everyone who asks in it, the owner included.
   const scope = guest || guestThread(guests, channel, threadTs || ts);
-  if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.anywhere ? [...new Set([...(t.guest?.users || []), user])] : scope.users, limited: Boolean(scope.limited || t.guest?.limited) };
+  if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.anywhere ? [...new Set([...(t.guest?.users || []), user])] : scope.users, emails: { ...t.guest?.emails, ...scope.emails }, limited: Boolean(scope.limited || t.guest?.limited) };
   if (scope?.thread) Object.assign(t, scope.thread);
   if (scope?.opus && !t.modelPinned) t.model = config.opusModel;
   if (config.cleanUp && user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
@@ -401,7 +401,7 @@ async function runJob(k, t) {
           store.save();
         }
       },
-      env: { ...RUN_ENV, AI_SLACK_OUTBOX: outbox, ...(limited ? { AI_SLACK_READERS: ((t.guest.users || []).includes(t.lastAsker) ? [t.lastAsker] : t.guest.users || []).join(',') } : {}) },
+      env: { ...RUN_ENV, AI_SLACK_OUTBOX: outbox, ...(limited ? { AI_SLACK_READERS: ((t.guest.users || []).includes(t.lastAsker) ? [t.lastAsker] : t.guest.users || []).join(','), AI_SLACK_SHARE_TO: (t.guest.users || []).map((u) => t.guest.emails?.[u]).filter(Boolean).join(',') } : {}) },
     });
     running.get(k).stop = run.stop;
     return run.promise;

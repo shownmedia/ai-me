@@ -46,3 +46,10 @@ export async function slackGuard({ tool_name: name = '', tool_input: input = {} 
   if (!readers.length || !members || !readers.every((u) => members.includes(u))) return 'That is a private channel the person asking is not in.';
   return null;
 }
+
+// The id of the file a Drive create_file / copy_file call made, from its tool response (object, string or
+// MCP content blocks), or null. Used by bin/share-created.js to share it with the guests.
+export function createdFileId(response) {
+  const text = typeof response === 'string' ? response : JSON.stringify(response ?? '');
+  return text.match(/\\?"id\\?"\s*:\s*\\?"([A-Za-z0-9_-]{20,})/)?.[1] || null;
+}

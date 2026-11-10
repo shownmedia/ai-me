@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
 import { runClaude, buildArgs, estimateTask, parseEstimate, windowsClaude, READER_TOOLS, readerSettings } from '../src/claude.js';
-import { slackGuard } from '../src/slack-guard.js';
+import { slackGuard, createdFileId } from '../src/slack-guard.js';
 import { editedReply, toMrkdwn, chunk, describeTool, lowercase, parseLinks, commsText, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from '../src/format.js';
 
 const bin = [process.execPath, path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-claude.js')];
@@ -209,6 +209,17 @@ test('limited runs: --settings is passed through, only the allowed tools', () =>
   assert.deepEqual(args.slice(args.indexOf('--settings'), args.indexOf('--settings') + 2), ['--settings', '{"hooks":{}}']);
   assert.ok(!buildArgs({ prompt: 'p', sessionId: 's', permissionMode: 'dontAsk' }).includes('--settings'));
   assert.ok(JSON.parse(readerSettings()).hooks.PreToolUse[0].hooks[0].command.includes('slack-guard.js'));
+  const post = JSON.parse(readerSettings()).hooks.PostToolUse[0];
+  assert.ok(post.hooks[0].command.includes('share-created.js') && new RegExp(post.matcher).test('mcp__claude_ai_Google_Drive__copy_file') && !new RegExp(`^(${post.matcher})$`).test('mcp__claude_ai_Google_Drive__share_file'));
+});
+
+test('createdFileId: the new file id from a Drive create/copy response in any shape', () => {
+  const file = { id: '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', title: 'x', parents: ['0B9parentFolderIdxxxxxxxx'] };
+  assert.equal(createdFileId(file), file.id);
+  assert.equal(createdFileId(JSON.stringify(file)), file.id);
+  assert.equal(createdFileId([{ type: 'text', text: JSON.stringify(file) }]), file.id, 'MCP content blocks (escaped JSON)');
+  assert.equal(createdFileId({ driveId: '0AparentDriveIdxxxxxxxxxxx' }), null);
+  assert.equal(createdFileId(undefined), null);
   assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'mcp__claude_ai_Melius'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
   assert.ok(!READER_TOOLS.some((t) => /send_message|Gmail__(send|forward|reply|trash)|share_file|trash_file|create_event|update_event|delete/.test(t)), 'no sends, shares, invites or deletes');
 });
