@@ -220,7 +220,7 @@ test('createdFileId: the new file id from a Drive create/copy response in any sh
   assert.equal(createdFileId([{ type: 'text', text: JSON.stringify(file) }]), file.id, 'MCP content blocks (escaped JSON)');
   assert.equal(createdFileId({ driveId: '0AparentDriveIdxxxxxxxxxxx' }), null);
   assert.equal(createdFileId(undefined), null);
-  assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'mcp__claude_ai_Melius'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
+  assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'WebSearch', 'WebFetch', 'mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
   assert.ok(!READER_TOOLS.some((t) => /send_message|Gmail__(send|forward|reply|trash)|share_file|trash_file|create_event|update_event|delete/.test(t)), 'no sends, shares, invites or deletes');
 });
 
@@ -256,7 +256,15 @@ test('slack guard: public channels and the asker\'s private channels only, never
   assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Google_Calendar__create_event', tool_input: {} }, ['UM'], slack), /not available/);
   assert.equal(await slackGuard({ tool_name: 'mcp__claude_ai_Melius__node_create', tool_input: {} }, ['UM'], slack), null);
   assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Melius__canvas_delete', tool_input: {} }, ['UM'], slack), /off/);
-  assert.match(await slackGuard({ tool_name: 'mcp__shownroom__set_ticket_status', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.match(await slackGuard({ tool_name: 'mcp__shownroom__set_ticket_status', tool_input: {} }, ['UM'], slack), /read only/);
+  assert.equal(await slackGuard({ tool_name: 'mcp__shownroom__get_launch', tool_input: {} }, ['UM'], slack), null);
+  assert.equal(await slackGuard({ tool_name: 'mcp__lumen__getLaunches', tool_input: {} }, ['UM'], slack), null);
+  for (const t of ['applyChange', 'deleteInLumen', 'planAddCreator']) assert.match(await slackGuard({ tool_name: `mcp__lumen__${t}`, tool_input: {} }, ['UM'], slack), /read only/);
+  assert.equal(await slackGuard({ tool_name: 'mcp__attio__query_records', tool_input: {} }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'mcp__attio__create_record', tool_input: {} }, ['UM'], slack), /not available/);
+  assert.equal(await slackGuard({ tool_name: 'WebSearch', tool_input: {} }, ['UM'], slack), null);
+  assert.equal(await slackGuard({ tool_name: 'WebFetch', tool_input: {} }, ['UM'], slack), null);
+  assert.match(await slackGuard({ tool_name: 'mcp__github__create_pull_request', tool_input: {} }, ['UM'], slack), /not available/);
   assert.match(await slackGuard({ tool_name: 'mcp__claude_ai_Slack__slack_read_channel', tool_input: { channel_id: 'G2' } }, [], slack), /not in/, 'no readers fails closed');
 });
 
@@ -278,4 +286,25 @@ test('newMessage: [new] or a Drive link not linked yet posts a new message', asy
   assert.equal(newMessage(`- doc: <${doc}|doc>`).fresh, true);
   assert.equal(newMessage(`- revised: <${doc}?tab=t.abc|doc>`, `- doc: <${doc}|doc>`).fresh, false);
   assert.equal(newMessage('- video: https://drive.google.com/file/d/1Kb2Rq0bsrGoWn-BsJK3vNRJPx9_ow5Do/view').fresh, true);
+});
+
+test('attio mcp: read-only tools, key from env file, never in the config', async () => {
+  const { handle, attioToken, TOOLS } = await import('../bin/attio-mcp.js');
+  const { readerMcp } = await import('../src/claude.js');
+  const { ATTIO_READS } = await import('../src/slack-guard.js');
+  assert.deepEqual(Object.keys(TOOLS).map((t) => `mcp__attio__${t}`), ATTIO_READS);
+  assert.ok(!/token|key/i.test(readerMcp()));
+  for (const [name, t] of Object.entries(TOOLS)) {
+    const [method, p] = t.req({ object: 'deals', list: 'sales', record_id: 'r1' });
+    assert.ok(method === 'GET' || /\/(records|entries)\/query$/.test(p), `${name} must be a read`);
+  }
+  const f = path.join(os.tmpdir(), `attio-env-${process.pid}`);
+  fs.writeFileSync(f, 'A=1\nATTIO_API_TOKEN="abc"\n');
+  assert.equal(attioToken({}, f), 'abc');
+  assert.equal(attioToken({ ATTIO_API_TOKEN: 'x' }, f), 'x');
+  assert.equal(attioToken({}, `${f}-missing`), null);
+  fs.rmSync(f);
+  assert.equal((await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).result.tools.length, Object.keys(TOOLS).length);
+  assert.equal(await handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
+  assert.equal((await handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_objects' } }, null)).result.isError, true);
 });

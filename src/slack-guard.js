@@ -16,6 +16,14 @@ export const GUEST_TOOLS = [
   ...['list_calendars', 'list_events', 'get_event', 'search_events', 'suggest_time'].map((t) => `${G}Google_Calendar__${t}`),
 ];
 const MELIUS = `${G}Melius__`;
+// Wider access (Mitchell, 2026-11-10): the internet like the owner, plus read-only Attio (bin/attio-mcp.js),
+// Lumen and ShownRoom. Still no DMs, no shell, no code or GitHub.
+export const WEB_TOOLS = ['WebSearch', 'WebFetch'];
+// Exactly the tools bin/attio-mcp.js serves, so another `attio` server's write tools never pass.
+export const ATTIO_READS = ['list_objects', 'list_attributes', 'query_records', 'get_record', 'list_lists', 'query_list_entries', 'list_notes'].map((t) => `mcp__attio__${t}`);
+const LUMEN = 'mcp__lumen__';
+const SHOWNROOM = 'mcp__shownroom__';
+const readOnly = (t) => /^(get|list|search|find|recommend|whoami|whatChanged)/i.test(t) && t !== 'list_notifications';
 // Big tool results (a long Doc) are saved by Claude Code under the session's tool-results folder and paged with
 // Read/Grep, so those two may open that folder of a limited run's session, and nothing else.
 // Compared with forward slashes so the same check works on Windows.
@@ -29,7 +37,8 @@ const CHANNEL_READS = new Set(['slack_read_channel', 'slack_read_thread']);
 // slack: { info(channel) -> conversations.info channel or null, members(channel) -> member ids or null }.
 // Returns null when the call is allowed, else the reason it's refused.
 export async function slackGuard({ tool_name: name = '', tool_input: input = {} }, readers, slack) {
-  if (name === 'ToolSearch' || GUEST_TOOLS.includes(name)) return null;
+  if (name === 'ToolSearch' || GUEST_TOOLS.includes(name) || WEB_TOOLS.includes(name) || ATTIO_READS.includes(name)) return null;
+  if (name.startsWith(LUMEN) || name.startsWith(SHOWNROOM)) return readOnly(name.slice(name.startsWith(LUMEN) ? LUMEN.length : SHOWNROOM.length)) ? null : 'Lumen and ShownRoom are read only in this thread.';
   if (name === 'Read' || name === 'Grep') return toolResult(input.file_path ?? input.path) ? null : `${name} only works on saved tool results here, not on files on this computer.`;
   if (name.startsWith(MELIUS)) return MELIUS_OFF.has(name.slice(MELIUS.length)) ? 'Deleting and billing in Melius are off in this thread.' : null;
   const tool = name.startsWith(SLACK) ? name.slice(SLACK.length) : '';

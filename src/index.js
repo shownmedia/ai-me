@@ -14,11 +14,11 @@ import path from 'node:path';
 import bolt from '@slack/bolt';
 import { config } from './config.js';
 import { createStore } from './store.js';
-import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings } from './claude.js';
+import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings, readerMcp } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
 import { toMrkdwn, chunk, editedReply, newMessage, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
-import { loadSystemPrompt, guestPrompt, readerPrompt, buildPrompt, gatherContext } from './prompt.js';
+import { loadSystemPrompt, guestPrompt, readerPrompt, ownerInGuestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
 import { CLEANUP_COMMAND, DONE_REPLY, ASKS_BACK, cleanupDue, runCleanup } from './cleanup.js';
@@ -364,14 +364,19 @@ async function runJob(k, t) {
   prepareOutbox(outbox, { resumed: msgs.some((m) => m.resumed) });
 
   // Limited guests (guests.json `limited`): only the tools in READER_TOOLS, each checked by the guard hook.
-  // A thread's first read-only run starts a fresh session with the whole thread as context, so an earlier
-  // unrestricted run's transcript stays out of it.
-  const limited = Boolean(t.guest?.limited);
-  if (limited && !t.readerSession) {
-    t.sessionId = crypto.randomUUID();
-    t.started = false;
-    delete t.contextTs;
-    t.readerSession = true;
+  // A batch of only the owner's own asks in such a thread runs unrestricted. Each mode keeps its own session (the first one
+  // starts fresh with the whole thread as context), so an unrestricted transcript never reaches a limited run.
+  const limited = Boolean(t.guest?.limited) && !(msgs.length && msgs.every((m) => m.from === config.ownerId));
+  const mode = limited ? 'reader' : 'full';
+  const current = t.readerSession ? 'reader' : 'full';
+  if (t.guest?.limited && mode !== current) {
+    t.sessions = { ...t.sessions, [current]: { sessionId: t.sessionId, started: t.started, contextTs: t.contextTs } };
+    const saved = t.sessions[mode];
+    t.sessionId = saved?.sessionId || crypto.randomUUID();
+    t.started = Boolean(saved?.started);
+    if (saved?.contextTs) t.contextTs = saved.contextTs;
+    else delete t.contextTs;
+    t.readerSession = limited;
     store.save();
   }
   const context = await gatherContext(client, t, msgs, { botUserId, ownerId: config.ownerId, ownerName: config.ownerName, log });
@@ -386,12 +391,13 @@ async function runJob(k, t) {
       resume,
       model: t.model,
       permissionMode: limited ? 'dontAsk' : config.permissionMode,
-      systemPrompt: [systemPrompt, limited ? readerPrompt(config, t.guest) : addons.systemPrompt(t) || (t.guest ? guestPrompt(config, t.guest) : '')].filter(Boolean).join('\n\n'),
+      systemPrompt: [systemPrompt, limited ? readerPrompt(config, t.guest) : t.guest?.limited ? ownerInGuestPrompt(config, t.guest) : addons.systemPrompt(t) || (t.guest ? guestPrompt(config, t.guest) : '')].filter(Boolean).join('\n\n'),
       maxBudgetUsd: config.maxBudgetUsd,
       chrome: limited ? false : config.chrome,
       // `--setting-sources local`: the owner's global CLAUDE.md, plugins, hooks and allow rules stay out (the temp folder has no local ones).
       extraArgs: limited ? `--allowedTools ${READER_TOOLS.join(',')} --setting-sources local` : config.claudeExtraArgs,
       settings: limited ? readerSettings() : undefined,
+      mcpConfig: limited ? readerMcp() : undefined,
       disallowedTools: limited ? [...SELF_PROTECT, ...READER_DENY] : SELF_PROTECT,
       timeoutMin: config.timeoutMin,
       onProgress,

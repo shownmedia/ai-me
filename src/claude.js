@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describeTool } from './format.js';
-import { GUEST_TOOLS } from './slack-guard.js';
+import { GUEST_TOOLS, WEB_TOOLS } from './slack-guard.js';
 
 // Windows can't spawn npm's claude.cmd without a shell (and a shell would let Slack text
 // inject commands), so an npm install resolves to [node, the package's own entry point].
@@ -59,10 +59,22 @@ export const SELF_PROTECT = [
 // the Google and Melius tools (GUEST_TOOLS in src/slack-guard.js).
 export const READER_TOOLS = ['slack_search_public', 'slack_read_channel', 'slack_read_thread', 'slack_search_users', 'slack_read_user_profile']
   .map((t) => `mcp__claude_ai_Slack__${t}`)
-  .concat(GUEST_TOOLS, ['mcp__claude_ai_Melius', 'ToolSearch', 'Read', 'Grep']);
-export const READER_DENY = ['Bash', 'Glob', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool'];
+  .concat(GUEST_TOOLS, WEB_TOOLS, ['mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom', 'ToolSearch', 'Read', 'Grep']);
+export const READER_DENY = ['Bash', 'Glob', 'Write', 'Edit', 'NotebookEdit', 'Agent', 'Task', 'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool'];
 const guard = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'slack-guard.js');
 const shareCreated = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'share-created.js');
+const attio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'attio-mcp.js');
+// MCP config for limited runs: read-only Attio (the server reads the key itself, so none is written here), plus
+// the owner's Lumen and ShownRoom servers, which `--setting-sources local` would otherwise leave out. Only their
+// type and url are copied (they sign in with OAuth); the guard keeps them read only.
+export function readerMcp(file = path.join(os.homedir(), '.claude.json')) {
+  let user = {};
+  try {
+    user = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers || {};
+  } catch {}
+  const shared = Object.fromEntries(['lumen', 'shownroom'].filter((n) => user[n]?.url).map((n) => [n, { type: user[n].type || 'http', url: user[n].url }]));
+  return JSON.stringify({ mcpServers: { attio: { command: process.execPath, args: [attio] }, ...shared } });
+}
 export const readerSettings = () => JSON.stringify({
   hooks: {
     PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: `"${process.execPath}" "${guard}"`, timeout: 30 }] }],
@@ -77,7 +89,7 @@ export const readerSettings = () => JSON.stringify({
 //   ("Browser is already in use"). Logged-in browsing goes through Claude in Chrome instead.
 export const RUN_ENV = { AI_SLACK_BOT: '1', CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1', BASH_DEFAULT_TIMEOUT_MS: '600000', PLAYWRIGHT_MCP_ISOLATED: 'true' };
 
-export function buildArgs({ prompt, sessionId, resume, model, permissionMode, systemPrompt, maxBudgetUsd, chrome = false, disallowedTools = [], settings, extraArgs = '' }) {
+export function buildArgs({ prompt, sessionId, resume, model, permissionMode, systemPrompt, maxBudgetUsd, chrome = false, disallowedTools = [], settings, mcpConfig, extraArgs = '' }) {
   // No model means Claude Code's own default (whatever `claude` uses in a terminal).
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(model ? ['--model', model] : [])];
   if (permissionMode === 'bypassPermissions') args.push('--dangerously-skip-permissions');
@@ -89,6 +101,7 @@ export function buildArgs({ prompt, sessionId, resume, model, permissionMode, sy
   if (chrome) args.push('--chrome');
   if (disallowedTools.length) args.push('--disallowedTools', ...disallowedTools);
   if (settings) args.push('--settings', settings);
+  if (mcpConfig) args.push('--mcp-config', mcpConfig);
   args.push(...extraArgs.split(' ').filter(Boolean));
   return args;
 }
