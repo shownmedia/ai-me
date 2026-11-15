@@ -429,11 +429,11 @@ async function runJob(k, t) {
       t.started = false;
       res = await attempt(false);
     }
-    // Replies kept turning into paragraphs inside bullets (Mitchell 2026-11-15): one that runs long goes
+    // Replies kept turning into paragraphs inside bullets (2026-11-15): one that runs long goes
     // back to the same session once. Anything that goes wrong keeps the first reply.
     const long = explainingChars(res.text);
     if (config.tightenOver && res.ok && !res.timedOut && !res.stopped && long > config.tightenOver) {
-      const again = await attempt(true, `(Automatic check, not from ${config.ownerName}.) That reply has ${long} characters of explanation and the limit is about 600; drafted text in code blocks and quotes doesn't count. Send it again by the "Your final message" rules: line one is the answer or result with its link, then only what they need to act, one sentence per line. Drop how you did it, sources and caveats that change nothing, extra numbers and what you could do next. Keep every link, mention, code block and quoted draft you still use, and a first line of [new] if you had one. If the length is something they asked you to write or explain, send the same message again unchanged. Reply with the message only.`);
+      const again = await attempt(true, `(Automatic check, not from ${config.ownerName}.) That reply has ${long} characters of explanation and the limit is about 600; drafted text in code blocks and quotes doesn't count. Send it again by the "Your final message" rules: line one is the answer or result with its link, then only what they need to act, one sentence per line. Drop how you did it, sources and caveats that change nothing, extra numbers and what you could do next. Never cut data they asked for (a list, a breakdown, a table, links): keep every item. Keep every link, mention, code block and quoted draft you still use, and a first line of [new] if you had one. If the length is something they asked you to write or explain, send the same message again unchanged. Reply with the message only.`);
       if (again.ok && !again.timedOut && !again.stopped && again.text.trim() && explainingChars(again.text) < long) {
         log(`[tighten] ${k} ${long} -> ${explainingChars(again.text)} chars`);
         res = { ...res, text: again.text, costUsd: (res.costUsd || 0) + (again.costUsd || 0), denials: [...(res.denials || []), ...(again.denials || [])] };

@@ -85,13 +85,13 @@ export function newMessage(text, base = '') {
   return { text: s, fresh: [...s.matchAll(DRIVE_ID)].some((m) => !seen.has(m[1])) };
 }
 
-// How much of a reply is the bot explaining itself: everything outside code blocks and quoted lines
-// (drafted messages and copy-paste text live in those). Used to send an over-long reply back once.
+// How much of a reply is the bot explaining itself: everything outside code blocks, quoted lines
+// and table rows (drafted messages, copy-paste text and requested data live in those). Used to send an over-long reply back once.
 export function explainingChars(text) {
   return String(text ?? '')
     .replace(/```[\s\S]*?```/g, '')
     .split('\n')
-    .filter((l) => !/^\s*(>|&gt;)/.test(l))
+    .filter((l) => !/^\s*(>|&gt;|\|)/.test(l))
     .join('\n')
     .replace(/<(https?:[^|>]+)\|([^>]+)>/g, '$2')
     .replace(/\[([^\]]+)\]\(https?:[^)]+\)/g, '$1')
