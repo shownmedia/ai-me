@@ -59,7 +59,7 @@ export const config = {
   // Each thread's first run picks Sonnet or Opus from the task ("use opus"/"use sonnet" still pins it). AUTO_MODEL=0 turns it off.
   autoModel: !/^(0|false|no)$/i.test(env.AUTO_MODEL || ''),
   permissionMode: env.PERMISSION_MODE || 'bypassPermissions',
-  timeoutMin: Number(env.TIMEOUT_MIN || 60),
+  timeoutMin: Number(env.TIMEOUT_MIN || 240),
   maxBudgetUsd: env.MAX_BUDGET_USD || '',
   claudeExtraArgs: env.CLAUDE_EXTRA_ARGS || '',
   // Claude in Chrome (the owner's logged-in browser). On unless CHROME=0.
@@ -83,10 +83,15 @@ export const config = {
   editInPlace: /^(1|true|yes)$/i.test(env.EDIT_IN_PLACE || ''),
   cleanupAfterMin: /^(off|no|false)$/i.test(env.CLEANUP_AFTER_MIN || '') ? null : Math.max(1, Number(env.CLEANUP_AFTER_MIN || 60)),
   lowercase: /^(1|true|yes)$/i.test(env.LOWERCASE || ''),
-  // Hour (local, 0-23) of the daily lessons DM; LESSONS_HOUR=off turns it off.
+  // A finished reply with more than this many characters of explanation (code blocks and quotes don't count)
+  // goes back to the same session once to be cut down. TIGHTEN_OVER=off turns that off.
+  tightenOver: /^(off|no|false|0)$/i.test(env.TIGHTEN_OVER || '') ? null : Math.max(300, Number(env.TIGHTEN_OVER || 800)),
+  // Hour (local, 0-23) of the daily lessons DM. Off unless LESSONS_HOUR is set.
   // Lessons are saved to memory when the DM goes out; LESSONS_AUTOSAVE=off goes back to "reply save".
   lessonsAutoSave: !/^(off|no|false)$/i.test(env.LESSONS_AUTOSAVE || ''),
-  lessonsHour: /^(off|no|false)$/i.test(env.LESSONS_HOUR || '') ? null : Math.min(23, Math.max(0, Number(env.LESSONS_HOUR || 21))),
+  // LESSONS_DM=off: no DM at all, the lessons are saved quietly (logged as [lessons] in logs/bot.log).
+  lessonsDm: !/^(off|no|false)$/i.test(env.LESSONS_DM || ''),
+  lessonsHour: !env.LESSONS_HOUR || /^(off|no|false)$/i.test(env.LESSONS_HOUR) ? null : Math.min(23, Math.max(0, Number(env.LESSONS_HOUR))),
   maxParallel: Math.max(1, Number(env.MAX_PARALLEL || 3)),
   // Pull new code from the repo it was cloned from, while idle, and restart on it (src/update.js).
   autoUpdate: /^(1|true|yes)$/i.test(env.AUTO_UPDATE || ''),
@@ -103,6 +108,8 @@ export const config = {
   // none falls back to its pod's, POD_GROWTH_ENGINEERS=1:Sebastian,…) and Outreach Specialist (above).
   growthSlackIds: nameMap(env.GROWTH_SLACK_IDS),
   podGrowthEngineers: nameMap(env.POD_GROWTH_ENGINEERS),
+  // Project managers by Lumen name; PM_SLACK_IDS=Name:ID,… adds or overrides these.
+  pmSlackIds: { danin: 'U0B5RCJKV63', miralem: 'U0BURENPYK0', tony: 'U0BC9G4FSEN', ...nameMap(env.PM_SLACK_IDS) },
   launchTeamKey: env.LUMEN_LAUNCH_TEAM_KEY || '',
   lumenUrl: env.LUMEN_URL || 'https://lumen.shownmedia.com',
   // Answer teammates' status questions when they tag the owner, and remind assignees the day before a
@@ -118,6 +125,9 @@ export const config = {
     hours: String(env.SWEEPER_HOURS || '12').split(',').map((h) => h.trim()).filter(Boolean).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h <= 23),
     max: Number(env.SWEEPER_MAX) > 0 ? Number(env.SWEEPER_MAX) : 15,
     repeatDays: Number(env.SWEEPER_REPEAT_DAYS) >= 0 && env.SWEEPER_REPEAT_DAYS ? Number(env.SWEEPER_REPEAT_DAYS) : 3,
+    // ShownRoom tickets waiting on the owner with a suggested ticket reply: off unless SWEEPER_SHOWNROOM=1
+    // (Mitchell 2026-11-11: those drafts were always bad).
+    shownroom: /^(1|true|yes|on)$/i.test(env.SWEEPER_SHOWNROOM || ''),
     channel: env.SWEEPER_CHANNEL || '',
     example: env.SWEEPER_EXAMPLE || '',
     // Slack ids never tagged in a sweeper message (on top of the names in src/sweeper.js NEVER_TAG).

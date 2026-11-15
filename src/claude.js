@@ -213,6 +213,14 @@ const ESTIMATE_PROMPT = [
   '',
 ].join('\n');
 
+// "take 4 hours", "spend 90 min", "for 2 hrs": a run length the owner asked for, in minutes (max 12h), or null.
+export function requestedMinutes(text) {
+  const m = String(text ?? '').match(/\b(?:take|spend|run|work|go|for|up to)\s+(?:about\s+|around\s+|at least\s+)?(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m)\b/i);
+  if (!m) return null;
+  const n = Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1);
+  return n > 0 ? Math.min(Math.round(n), 720) : null;
+}
+
 export function parseEstimate(text) {
   const s = String(text ?? '');
   const n = Number(s.match(/\d+/)?.[0]);

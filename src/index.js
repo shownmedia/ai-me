@@ -14,10 +14,10 @@ import path from 'node:path';
 import bolt from '@slack/bolt';
 import { config } from './config.js';
 import { createStore } from './store.js';
-import { runClaude, estimateTask, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings, readerMcp } from './claude.js';
+import { runClaude, estimateTask, requestedMinutes, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings, readerMcp } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
-import { toMrkdwn, chunk, editedReply, newMessage, lowercase, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
+import { toMrkdwn, chunk, editedReply, newMessage, lowercase, explainingChars, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
 import { loadSystemPrompt, guestPrompt, readerPrompt, ownerInGuestPrompt, buildPrompt, gatherContext } from './prompt.js';
 import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
@@ -382,11 +382,12 @@ async function runJob(k, t) {
   const context = await gatherContext(client, t, msgs, { botUserId, ownerId: config.ownerId, ownerName: config.ownerName, log });
   const prompt = buildPrompt(config, t, msgs, context.text);
 
-  const attempt = (resume) => {
+  const timeoutMin = Math.max(config.timeoutMin, ...msgs.map((m) => requestedMinutes(m.text) || 0));
+  const attempt = (resume, ask = prompt) => {
     const run = runClaude({
       bin: config.claudeBin,
       cwd: limited ? readerDir() : t.guest?.workdir ? t.guest.workdir.replace(/^~/, process.env.HOME || '') : config.workdir,
-      prompt,
+      prompt: ask,
       sessionId: t.sessionId,
       resume,
       model: t.model,
@@ -399,7 +400,7 @@ async function runJob(k, t) {
       settings: limited ? readerSettings() : undefined,
       mcpConfig: limited ? readerMcp() : undefined,
       disallowedTools: limited ? [...SELF_PROTECT, ...READER_DENY] : SELF_PROTECT,
-      timeoutMin: config.timeoutMin,
+      timeoutMin,
       onProgress,
       onSessionStart: () => {
         if (!t.started) {
@@ -428,6 +429,16 @@ async function runJob(k, t) {
       t.started = false;
       res = await attempt(false);
     }
+    // Replies kept turning into paragraphs inside bullets (Mitchell 2026-11-15): one that runs long goes
+    // back to the same session once. Anything that goes wrong keeps the first reply.
+    const long = explainingChars(res.text);
+    if (config.tightenOver && res.ok && !res.timedOut && !res.stopped && long > config.tightenOver) {
+      const again = await attempt(true, `(Automatic check, not from ${config.ownerName}.) That reply has ${long} characters of explanation and the limit is about 600; drafted text in code blocks and quotes doesn't count. Send it again by the "Your final message" rules: line one is the answer or result with its link, then only what they need to act, one sentence per line. Drop how you did it, sources and caveats that change nothing, extra numbers and what you could do next. Keep every link, mention, code block and quoted draft you still use, and a first line of [new] if you had one. If the length is something they asked you to write or explain, send the same message again unchanged. Reply with the message only.`);
+      if (again.ok && !again.timedOut && !again.stopped && again.text.trim() && explainingChars(again.text) < long) {
+        log(`[tighten] ${k} ${long} -> ${explainingChars(again.text)} chars`);
+        res = { ...res, text: again.text, costUsd: (res.costUsd || 0) + (again.costUsd || 0), denials: [...(res.denials || []), ...(again.denials || [])] };
+      }
+    }
   } finally {
     clearInterval(statusTimer);
   }
@@ -443,7 +454,7 @@ async function runJob(k, t) {
   const footer = secs < 90 ? `${secs}s` : `${Math.round(secs / 60)}m`;
   let text = res.text;
   if (res.stopped) text = 'Stopped. Reply here if you want me to pick it back up.';
-  else if (res.timedOut) text = `I ran out of time (${config.timeoutMin} min) before finishing. Last thing I was doing: ${lastStep || 'unknown'}. Reply \`continue\` and I'll keep going.\n\n${text}`;
+  else if (res.timedOut) text = `I ran out of time (${timeoutMin} min) before finishing. Last thing I was doing: ${lastStep || 'unknown'}. Reply \`continue\` and I'll keep going.\n\n${text}`;
   const { files, skipped } = collectOutbox(outbox);
   if (skipped.length) text += `\n\n_Couldn't attach: ${skipped.join('; ')}_`;
   if (res.denials?.length) text += `\n\n_Blocked by permissions: ${[...new Set(res.denials.map((d) => d.tool_name))].join(', ')}_`;

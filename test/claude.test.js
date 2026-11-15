@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import os from 'node:os';
-import { runClaude, buildArgs, estimateTask, parseEstimate, windowsClaude, READER_TOOLS, readerSettings } from '../src/claude.js';
+import { runClaude, buildArgs, estimateTask, parseEstimate, requestedMinutes, windowsClaude, READER_TOOLS, readerSettings } from '../src/claude.js';
 import { slackGuard, createdFileId } from '../src/slack-guard.js';
 import { editedReply, toMrkdwn, chunk, describeTool, lowercase, parseLinks, commsText, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from '../src/format.js';
 
@@ -307,4 +307,12 @@ test('attio mcp: read-only tools, key from env file, never in the config', async
   assert.equal((await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).result.tools.length, Object.keys(TOOLS).length);
   assert.equal(await handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
   assert.equal((await handle({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_objects' } }, null)).result.isError, true);
+});
+
+test('requestedMinutes reads a run length the owner asked for', () => {
+  assert.equal(requestedMinutes('take 4 hours to put this together'), 240);
+  assert.equal(requestedMinutes('spend 90 min on it'), 90);
+  assert.equal(requestedMinutes('take 4 hrs make sure this finishes'), 240);
+  assert.equal(requestedMinutes('take 50 hours'), 720);
+  assert.equal(requestedMinutes('fix the 4 hour bug'), null);
 });

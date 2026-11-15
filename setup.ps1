@@ -80,6 +80,8 @@ $s | Add-Member -NotePropertyName skipDangerousModePermissionPrompt -NotePropert
 [IO.File]::WriteAllText($sp, ($s | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
 
 if ($env:AI_ME_NO_CLAUDE) { Write-Host 'setup.ps1: done (AI_ME_NO_CLAUDE set, not opening Claude)'; return }
+# No console (Claude ran this, e.g. in the Claude app's Code tab): that session follows SETUP.md itself.
+if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { Write-Host 'setup.ps1: done. Claude, now follow ~\ai-me\SETUP.md in this session; run its commands from ~\ai-me, with ~\.ai-me\node and ~\.local\bin added to PATH if node or claude is not found.'; return }
 Say 'Claude Code opens next. If it asks you to log in, use your Shown Claude account (ask Dylan Crispin if you do not have one).'
 Write-Host 'Then just answer its questions. It makes the Slack app, connects your tools and tests the bot with you.'
 Start-Sleep -Seconds 2

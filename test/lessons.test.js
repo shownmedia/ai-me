@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { threadsToReview, ownerAsks, parseLessons, formatLessons, savePrompt, lessonsDue, memoryIndexPath, LESSONS_HEADER } from '../src/lessons.js';
+import { threadsToReview, ownerAsks, parseLessons, formatLessons, savePrompt, lessonsPrompt, lessonsDue, memoryIndexPath, LESSONS_HEADER } from '../src/lessons.js';
 
 test('reviews recent, started, non-guest threads only', () => {
   const now = Date.now();
@@ -51,4 +51,10 @@ test('auto-saved lessons say so and the save prompt lists them', () => {
   const lessons = [{ rule: 'No tables in docs', why: 'hard to read', thread: 1 }];
   assert.match(formatLessons(lessons, [], true), /i saved these/);
   assert.match(savePrompt(lessons, '/m'), /1\. No tables in docs \(from: hard to read\)/);
+});
+
+test('writing corrections and standing rules count as lessons', () => {
+  const p = lessonsPrompt(['t'], '', 'Sam');
+  assert.match(p, /going forward/);
+  assert.match(p, /two or more threads/);
 });

@@ -61,7 +61,7 @@ Send the bot a DM as them with the Slack connector (`slack_send_message` to the 
 
 It only works while the computer is on and awake (it catches up on missed messages within 5 minutes of waking).
 
-- Mac: give them the **keep-awake-charging** skill so they can check or undo this later. If `~/.claude/plugins/installed_plugins.json` doesn't list `keep-awake-charging`, run `mkdir -p ~/.claude/skills && cp -R ~/ai-me/skills/keep-awake-charging ~/.claude/skills/`. Then follow `~/ai-me/skills/keep-awake-charging/SKILL.md`, but in its step 2 have them type `! sudo pmset -c sleep 0 disksleep 0 disablesleep 1` here and enter their Mac password (on the charger it never sleeps, even with the lid closed; battery is unchanged). Its power button step makes a quick press lock the Mac instead of sleeping it.
+- Mac: give them the **keep-awake-charging** skill so they can check or undo this later. If `~/.claude/plugins/installed_plugins.json` doesn't list `keep-awake-charging`, run `mkdir -p ~/.claude/skills && cp -R ~/ai-me/skills/keep-awake-charging ~/.claude/skills/`. Then follow `~/ai-me/skills/keep-awake-charging/SKILL.md`, but in its step 2 run `osascript -e 'do shell script "pmset -c sleep 0 disksleep 0 disablesleep 1" with administrator privileges'` instead of `sudo`: the usual Mac password box opens and they type their password there (you never see it) (on the charger it never sleeps, even with the lid closed; battery is unchanged). Its power button step makes a quick press lock the Mac instead of sleeping it.
 - **Win:** run `powercfg /change standby-timeout-ac 0` (never sleep while plugged in).
 
 ## 7. Tell them (keep it this short)
@@ -69,5 +69,5 @@ It only works while the computer is on and awake (it catches up on missed messag
 - "Done. DM **AI <First>** anything you'd ask me here. It only takes tasks from you."
 - Keep it in your DMs; I'd skip adding it to channels. Use it like a superpowered search engine that can also work on your computer: find a Slack thread, the right Google Doc or SOP, or the answer to a question.
 - In a thread: reply to keep going, `stop` to cancel, "use opus" for harder work.
-- It updates itself. If it ever acts up, open Terminal (**Win:** PowerShell) and run the same setup command again; it repairs and re-checks everything.
+- It updates itself. If it ever acts up, paste the same setup message into the Claude app's Code tab again; it repairs and re-checks everything.
 - Questions: Gabriela. Claude account: Dylan Crispin.

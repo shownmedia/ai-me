@@ -14,8 +14,10 @@ bold() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 has() { command -v "$1" >/dev/null 2>&1; }
 
 [ "$(uname)" = "Darwin" ] || { echo "This one is for Macs. On Windows, open PowerShell and run:"; echo "  irm https://raw.githubusercontent.com/shownmedia/ai-me/main/setup.ps1 | iex"; exit 1; }
-# curl | bash leaves stdin as the script; Claude Code needs the keyboard.
-[ -n "${AI_ME_NO_CLAUDE:-}" ] || exec </dev/tty
+# curl | bash leaves stdin as the script; Claude Code needs the keyboard. No terminal at all (Claude ran
+# this, e.g. in the Claude app's Code tab): don't open Claude, that session follows SETUP.md itself.
+NO_TTY=; { [ -t 1 ] && (exec </dev/tty) 2>/dev/null; } || NO_TTY=1
+[ -n "${AI_ME_NO_CLAUDE:-}$NO_TTY" ] || exec </dev/tty
 
 bold "Setting up your AI bot for Slack. About 10 minutes, most of it Claude doing the work."
 
@@ -23,6 +25,7 @@ bold "Setting up your AI bot for Slack. About 10 minutes, most of it Claude doin
 if ! xcode-select -p >/dev/null 2>&1; then
   bold "Installing Apple's developer tools. A popup opens: click Install, wait for it to finish, then run the same command again."
   xcode-select --install >/dev/null 2>&1 || true
+  [ -z "$NO_TTY" ] || echo "setup.sh: Claude, wait until the user says Apple's developer tools popup has finished installing, then run the same setup command again."
   exit 0
 fi
 
@@ -72,6 +75,7 @@ json.dump(s, open(p, "w"), indent=2)
 PY
 
 [ -z "${AI_ME_NO_CLAUDE:-}" ] || { echo "setup.sh: done (AI_ME_NO_CLAUDE set, not opening Claude)"; exit 0; }
+[ -z "$NO_TTY" ] || { echo "setup.sh: done. Claude, now follow ~/ai-me/SETUP.md in this session; run its commands from ~/ai-me with export PATH=\"\$HOME/.ai-me/node/bin:\$HOME/.local/bin:\$PATH\" first."; exit 0; }
 bold "Claude Code opens next. If it asks you to log in, use your Shown Claude account (ask Dylan Crispin if you don't have one)."
 echo "Then just answer its questions. It makes the Slack app, connects your tools and tests the bot with you."
 sleep 2

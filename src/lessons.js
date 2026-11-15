@@ -30,7 +30,7 @@ export function memoryIndexPath(workdir) {
 export function lessonsPrompt(transcripts, memoryIndex, ownerName) {
   return `You review an AI assistant's Slack threads with ${ownerName}, its owner, to find lessons worth remembering.
 
-A lesson is a durable rule that a future run would get wrong again without being told: where some data really lives ("launch dates come from Google Calendar, not Lumen"), a preference about output or process ("dropdown, not an emoji reaction" only counts if it is a general preference), or a standing fact about people or tools. Only take lessons from ${ownerName} correcting or redirecting the assistant, or stating a rule. Not one-off task details, not things the assistant already got right, and nothing already covered by the memory index below.
+A lesson is a durable rule that a future run would get wrong again without being told: where some data really lives ("launch dates come from Google Calendar, not Lumen"), a preference about output or process ("dropdown, not an emoji reaction" only counts if it is a general preference), or a standing fact about people or tools. Only take lessons from ${ownerName} correcting or redirecting the assistant, or stating a rule. Anything ${ownerName} marks as standing ("going forward", "always", "never", "add to the rules") is a lesson. So is a correction about how the assistant writes or formats (too long, hard to read, "i don't understand this", "put it on separate lines", "just send the post") when the same kind of correction shows up in two or more threads: say what to do instead. Not one-off task details, not things the assistant already got right, and nothing already covered by the memory index below.
 
 Be strict: zero lessons is the normal answer. At most 5.
 
@@ -106,15 +106,16 @@ export async function reviewLessons({ client, config, state, botUserId, since, l
     log(`[lessons] ${transcripts.length} threads reviewed, ${lessons.length} lessons`);
     if (!lessons.length) return { text: null, lessons };
     // Posting for real also saves: the owner asked for lessons to auto save. Dry runs never write memory.
+    // With LESSONS_DM=off saving is all that happens (the owner asked for the DMs to stop, 2026-11-11).
     let saved = false;
-    if (post && config.lessonsAutoSave) {
+    if (post && (config.lessonsAutoSave || !config.lessonsDm)) {
       const dir = path.dirname(memoryIndexPath(config.workdir));
       const run = await runClaude({ bin: config.claudeBin, cwd: config.workdir, timeoutMin: 5, model: 'sonnet', permissionMode: 'bypassPermissions', prompt: savePrompt(lessons, dir), sessionId: crypto.randomUUID(), env: RUN_ENV, disallowedTools: SELF_PROTECT }).promise;
       saved = run.ok;
       log(`[lessons] auto-save ${saved ? 'done' : 'failed'}`);
     }
     const text = formatLessons(lessons, links, saved);
-    if (post) {
+    if (post && config.lessonsDm) {
       await client.chat.postMessage({ channel: await ownerDm(client, config.ownerId), text, unfurl_links: false });
     }
     return { text, lessons };
