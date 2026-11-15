@@ -1,0 +1,69 @@
+name: test
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+      # Windows: the real claude CLI resolves and runs without a shell, and the login service starts and stops.
+      - name: claude resolves on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          node --input-type=module -e "
+            import { execFileSync } from 'node:child_process';
+            import { windowsClaude } from './src/claude.js';
+            const bin = [].concat(windowsClaude(execFileSync('where.exe', ['claude'], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)));
+            console.log('resolved', bin);
+            console.log(execFileSync(bin[0], [...bin.slice(1), '--version'], { encoding: 'utf8' }));
+          "
+      - name: install.ps1 starts and stops the bot
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          "SLACK_BOT_TOKEN=xoxb-ci`nSLACK_APP_TOKEN=xapp-ci`nOWNER_SLACK_ID=UCI`nBOT_NAME=`"AI CI`"" | Set-Content -Encoding ascii .env
+          powershell -ExecutionPolicy Bypass -File bin\install.ps1
+          Start-Sleep -Seconds 10
+          $log = Get-Content logs\bot.log -Raw
+          Write-Host $log
+          if (-not $log) { throw 'bot never wrote to logs\bot.log' }
+          if ($log -match 'missing .* in \.env|Cannot find module|not recognized') { throw 'bot did not start cleanly' }
+          $runner = (Get-Content data\runner.pid -Raw).Trim()
+          if (-not (Get-Process -Id $runner -ErrorAction SilentlyContinue)) { throw 'runner loop is not running' }
+          powershell -ExecutionPolicy Bypass -File bin\install.ps1 uninstall
+          Start-Sleep -Seconds 2
+          if (Get-Process -Id $runner -ErrorAction SilentlyContinue) { throw 'uninstall left the runner running' }
+          if (Test-Path ([IO.Path]::Combine([Environment]::GetFolderPath('Startup'), 'ai-me.vbs'))) { throw 'launcher not removed' }
+
+      # The one-command setup (setup.sh / setup.ps1; under public/ in ai-mitchell) installs and downloads the bot.
+      - name: one-command setup (Mac)
+        if: runner.os == 'macOS'
+        env:
+          AI_ME_NO_CLAUDE: '1'
+          AI_ME_REPO: ${{ github.workspace }}
+        run: |
+          bash "$(test -f setup.sh && echo setup.sh || echo public/setup.sh)"
+          test -f ~/ai-me/package.json && test -d ~/ai-me/node_modules/@slack/bolt
+      - name: one-command setup (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          AI_ME_NO_CLAUDE: '1'
+          AI_ME_REPO: ${{ github.workspace }}
+        run: |
+          $f = if (Test-Path setup.ps1) { 'setup.ps1' } else { 'public\setup.ps1' }
+          Get-Content $f -Raw | Invoke-Expression
+          if (-not (Test-Path "$HOME\ai-me\node_modules\@slack\bolt")) { throw 'bot not downloaded and installed' }
+          if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { throw 'claude not on PATH' }
+          Get-Content "$HOME\.claude\settings.json" -Raw | ConvertFrom-Json | Out-Null
