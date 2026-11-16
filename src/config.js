@@ -79,10 +79,13 @@ export const config = {
   cleanUp: /^(1|true|yes|on)$/i.test(env.CLEAN_UP || ''),
   userToken: env.SLACK_USER_TOKEN || '',
   // One bot message per thread: the status line and every answer edit it instead of posting new messages.
-  // Edits don't notify, so the ✅ on your ask is the done signal. EDIT_IN_PLACE=1 turns it on.
-  editInPlace: /^(1|true|yes)$/i.test(env.EDIT_IN_PLACE || ''),
+  // Edits don't notify, so the ✅ on your ask is the done signal. On for everyone; EDIT_IN_PLACE=0 turns it off.
+  editInPlace: !/^(0|false|no|off)$/i.test(env.EDIT_IN_PLACE || ''),
   cleanupAfterMin: /^(off|no|false)$/i.test(env.CLEANUP_AFTER_MIN || '') ? null : Math.max(1, Number(env.CLEANUP_AFTER_MIN || 60)),
   lowercase: /^(1|true|yes)$/i.test(env.LOWERCASE || ''),
+  // A file describing how the owner wants the bot to sound (their own phrases, before/after examples).
+  // Added to the end of the system prompt on every run, so it wins over the general rules.
+  voiceFile: (env.VOICE_FILE || '').replace(/^~/, os.homedir()),
   // A finished reply with more than this many characters of explanation (code blocks and quotes don't count)
   // goes back to the same session once to be cut down. TIGHTEN_OVER=off turns that off.
   tightenOver: /^(off|no|false|0)$/i.test(env.TIGHTEN_OVER || '') ? null : Math.max(300, Number(env.TIGHTEN_OVER || 800)),
@@ -128,6 +131,9 @@ export const config = {
     // ShownRoom tickets waiting on the owner with a suggested ticket reply: off unless SWEEPER_SHOWNROOM=1
     // (Mitchell 2026-11-11: those drafts were always bad).
     shownroom: /^(1|true|yes|on)$/i.test(env.SWEEPER_SHOWNROOM || ''),
+    // ShownRoom cleanup reminders (section 1 of the sweep): on unless SWEEPER_CLEANUP=0. Mitchell 2026-11-15: the
+    // daily ShownRoom check-in thread in #launches-bots (~/launch-routines) posts these without a DM to approve.
+    cleanup: !/^(0|false|no|off)$/i.test(env.SWEEPER_CLEANUP || ''),
     channel: env.SWEEPER_CHANNEL || '',
     example: env.SWEEPER_EXAMPLE || '',
     // Slack ids never tagged in a sweeper message (on top of the names in src/sweeper.js NEVER_TAG).

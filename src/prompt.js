@@ -5,8 +5,11 @@ import path from 'node:path';
 import { freshMessages, renderContext } from './context.js';
 
 export function loadSystemPrompt(config) {
-  return fs
-    .readFileSync(path.join(config.root, 'prompts/system.md'), 'utf8')
+  let voice = '';
+  try {
+    if (config.voiceFile) voice = `\n\n${fs.readFileSync(config.voiceFile, 'utf8').trim()}\n`;
+  } catch {} // no voice file: the general rules stand
+  return (fs.readFileSync(path.join(config.root, 'prompts/system.md'), 'utf8') + voice)
     .replace(/\{\{(\w+)\}\}/g, (_, k) => ({ BOT_NAME: config.botName, OWNER_NAME: config.ownerName, WORKDIR: config.workdir })[k] ?? '');
 }
 
@@ -116,6 +119,6 @@ export function buildPrompt(config, t, msgs, context = '') {
   parts.push(`${context ? `${config.ownerName}'s ask (tagging you):\n` : ''}${ask.join('\n\n')}`);
   if (t.permalink) parts.push(`(Slack thread: ${t.permalink})`);
   parts.push(t.channel.startsWith('D') ? '(This is a DM: use the DM reply format.)' : '(This is a channel: use the channel reply format.)');
-  if (config.editInPlace && !t.guest) parts.push('(Replies in this thread edit one message, which does not notify. When this turn finishes something (the doc, video, Drive link, shipped PR or final answer is ready) or has news worth a ping, make the first line of your final message `[new]` so it posts as a new message. Status, revisions, small fixes and back-and-forth stay as edits.)');
+  if (config.editInPlace && !t.guest) parts.push('(Replies in this thread edit one message: your final message replaces the "on it" line, never a new message. So never just "done": say what you did or changed.)');
   return parts.join('\n\n');
 }

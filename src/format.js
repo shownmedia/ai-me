@@ -26,7 +26,8 @@ function convertProse(part) {
       typeof l === 'object'
         ? l.code
         : l
-            .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<$2|$1>')
+            // A url copied out of a Slack link can carry its old label ("url|Label"): drop it, or the link won't render.
+            .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s|]+)(?:\|[^)]*)?\)/g, '<$2|$1>')
             .replace(/^#{1,6}\s+(.+)$/, '*$1*')
             .replace(/\*\*(.+?)\*\*/g, '*$1*')
             .replace(/__(.+?)__/g, '*$1*')
