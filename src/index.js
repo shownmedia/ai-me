@@ -398,7 +398,7 @@ async function runJob(k, t) {
       // `--setting-sources local`: the owner's global CLAUDE.md, plugins, hooks and allow rules stay out (the temp folder has no local ones).
       extraArgs: limited ? `--allowedTools ${READER_TOOLS.join(',')} --setting-sources local` : config.claudeExtraArgs,
       settings: limited ? readerSettings() : undefined,
-      mcpConfig: limited ? readerMcp() : undefined,
+      mcpConfig: limited ? readerMcp(undefined, outbox) : undefined,
       disallowedTools: limited ? [...SELF_PROTECT, ...READER_DENY] : SELF_PROTECT,
       timeoutMin,
       onProgress,

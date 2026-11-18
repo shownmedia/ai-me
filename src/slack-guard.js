@@ -30,15 +30,19 @@ const readOnly = (t) => /^(get|list|search|find|recommend|whoami|whatChanged)/i.
 const slashed = (p) => path.resolve(p).split(path.sep).join('/');
 const TOOL_RESULTS = new RegExp(`^${slashed(path.join(os.homedir(), '.claude', 'projects')).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[^/]*-ai-slack-reader/[0-9a-f-]+/tool-results(/|$)`, process.platform === 'win32' ? 'i' : '');
 const toolResult = (p) => typeof p === 'string' && TOOL_RESULTS.test(slashed(p));
+// The run's own outbox (images it rendered with bin/render-mcp.js), so it can look at them before replying.
+const inOutbox = (p, outbox) => Boolean(outbox) && typeof p === 'string' && slashed(p).startsWith(`${slashed(outbox)}/`);
+const RENDER = new Set(['mcp__render__render_image', 'mcp__render__save_media']);
 const MELIUS_OFF = new Set(['canvas_delete', 'brand_kit_delete', 'cast_library_delete', 'delete_agent_team_skill', 'remove_agent_team_skill_asset', 'credits_upgrade']);
 const NO_CHANNEL = new Set(['slack_search_public', 'slack_search_users', 'slack_read_user_profile']);
 const CHANNEL_READS = new Set(['slack_read_channel', 'slack_read_thread']);
 
 // slack: { info(channel) -> conversations.info channel or null, members(channel) -> member ids or null }.
 // Returns null when the call is allowed, else the reason it's refused.
-export async function slackGuard({ tool_name: name = '', tool_input: input = {} }, readers, slack) {
-  if (name === 'ToolSearch' || GUEST_TOOLS.includes(name) || WEB_TOOLS.includes(name) || ATTIO_READS.includes(name)) return null;
+export async function slackGuard({ tool_name: name = '', tool_input: input = {} }, readers, slack, outbox = process.env.AI_SLACK_OUTBOX) {
+  if (name === 'ToolSearch' || GUEST_TOOLS.includes(name) || WEB_TOOLS.includes(name) || ATTIO_READS.includes(name) || RENDER.has(name)) return null;
   if (name.startsWith(LUMEN) || name.startsWith(SHOWNROOM)) return readOnly(name.slice(name.startsWith(LUMEN) ? LUMEN.length : SHOWNROOM.length)) ? null : 'Lumen and ShownRoom are read only in this thread.';
+  if (name === 'Read' && inOutbox(input.file_path, outbox)) return null;
   if (name === 'Read' || name === 'Grep') return toolResult(input.file_path ?? input.path) ? null : `${name} only works on saved tool results here, not on files on this computer.`;
   if (name.startsWith(MELIUS)) return MELIUS_OFF.has(name.slice(MELIUS.length)) ? 'Deleting and billing in Melius are off in this thread.' : null;
   const tool = name.startsWith(SLACK) ? name.slice(SLACK.length) : '';

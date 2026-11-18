@@ -220,7 +220,7 @@ test('createdFileId: the new file id from a Drive create/copy response in any sh
   assert.equal(createdFileId([{ type: 'text', text: JSON.stringify(file) }]), file.id, 'MCP content blocks (escaped JSON)');
   assert.equal(createdFileId({ driveId: '0AparentDriveIdxxxxxxxxxxx' }), null);
   assert.equal(createdFileId(undefined), null);
-  assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'WebSearch', 'WebFetch', 'mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
+  assert.ok(READER_TOOLS.every((t) => ['ToolSearch', 'Read', 'Grep', 'WebSearch', 'WebFetch', 'mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom', 'mcp__render'].includes(t) || /^mcp__claude_ai_(Slack__slack_(search_public|read_channel|read_thread|search_users|read_user_profile)|Gmail__|Google_)/.test(t)));
   assert.ok(!READER_TOOLS.some((t) => /send_message|Gmail__(send|forward|reply|trash)|share_file|trash_file|create_event|update_event|delete/.test(t)), 'no sends, shares, invites or deletes');
 });
 
@@ -315,4 +315,38 @@ test('requestedMinutes reads a run length the owner asked for', () => {
   assert.equal(requestedMinutes('take 4 hrs make sure this finishes'), 240);
   assert.equal(requestedMinutes('take 50 hours'), 720);
   assert.equal(requestedMinutes('fix the 4 hour bug'), null);
+});
+
+test('limited runs can make image files in their outbox and read them back, nothing else', async () => {
+  const { readerMcp } = await import('../src/claude.js');
+  const outbox = path.join(os.tmpdir(), 'ob-test');
+  assert.ok(JSON.parse(readerMcp('/nope', outbox)).mcpServers.render.args.includes(outbox));
+  assert.ok(!JSON.parse(readerMcp('/nope')).mcpServers.render, 'no outbox, no render server');
+  const slack = { info: async () => null, members: async () => null };
+  const g = (tool_name, tool_input = {}) => slackGuard({ tool_name, tool_input }, ['UM'], slack, outbox);
+  assert.equal(await g('mcp__render__render_image', { html: '<p>x</p>', filename: 'a.png' }), null);
+  assert.equal(await g('mcp__render__save_media', { url: 'https://x.com/a.png', filename: 'a.png' }), null);
+  assert.equal(await g('Read', { file_path: path.join(outbox, 'a.png') }), null);
+  assert.match(await g('Read', { file_path: path.join(outbox, '..', 'secret.txt') }), /only works/);
+  assert.match(await g('Read', { file_path: `${outbox}-other/a.png` }), /only works/);
+  assert.match(await g('Grep', { path: outbox, pattern: 'x' }), /only works/);
+  assert.match(await g('Write', { file_path: path.join(outbox, 'a.png') }), /not available/);
+});
+
+test('render-mcp: safe names, public https only, renders a png into the outbox', async () => {
+  const { safeName, publicHttps, chromePath, handle } = await import('../bin/render-mcp.js');
+  assert.equal(safeName('../../etc/chart.png', ['png']), 'chart.png');
+  assert.equal(safeName('chart.sh', ['png']), null);
+  assert.equal(safeName('.png', ['png']), null);
+  assert.ok(publicHttps('https://cdn.melius.com/a.png'));
+  for (const u of ['http://example.com/a.png', 'https://localhost/a', 'https://127.0.0.1/a', 'https://192.168.1.2/a', 'https://[::1]/a', 'file:///etc/passwd', 'nope']) assert.ok(!publicHttps(u), u);
+  const outbox = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-'));
+  const call = (name, args) => handle({ id: 1, method: 'tools/call', params: { name, arguments: args } }, outbox);
+  assert.match((await call('render_image', { html: 'x', filename: 'a.txt' })).result.content[0].text, /\.png/);
+  assert.match((await call('save_media', { url: 'https://127.0.0.1/a.png', filename: 'a.png' })).result.content[0].text, /public https/);
+  if (!chromePath()) return;
+  const r = await call('render_image', { html: '<body style="background:red"><iframe src="file:///etc/hosts"></iframe></body>', filename: 'red.png', width: 300, height: 300 });
+  assert.ok(!r.result.isError, r.result.content[0].text);
+  assert.ok(fs.statSync(path.join(outbox, 'red.png')).size > 100);
+  fs.rmSync(outbox, { recursive: true, force: true });
 });

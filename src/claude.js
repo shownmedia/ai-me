@@ -59,21 +59,23 @@ export const SELF_PROTECT = [
 // the Google and Melius tools (GUEST_TOOLS in src/slack-guard.js).
 export const READER_TOOLS = ['slack_search_public', 'slack_read_channel', 'slack_read_thread', 'slack_search_users', 'slack_read_user_profile']
   .map((t) => `mcp__claude_ai_Slack__${t}`)
-  .concat(GUEST_TOOLS, WEB_TOOLS, ['mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom', 'ToolSearch', 'Read', 'Grep']);
+  .concat(GUEST_TOOLS, WEB_TOOLS, ['mcp__claude_ai_Melius', 'mcp__attio', 'mcp__lumen', 'mcp__shownroom', 'mcp__render', 'ToolSearch', 'Read', 'Grep']);
 export const READER_DENY = ['Bash', 'Glob', 'Write', 'Edit', 'NotebookEdit', 'Agent', 'Task', 'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool'];
 const guard = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'slack-guard.js');
 const shareCreated = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'share-created.js');
 const attio = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'attio-mcp.js');
+const render = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'render-mcp.js');
 // MCP config for limited runs: read-only Attio (the server reads the key itself, so none is written here), plus
 // the owner's Lumen and ShownRoom servers, which `--setting-sources local` would otherwise leave out. Only their
-// type and url are copied (they sign in with OAuth); the guard keeps them read only.
-export function readerMcp(file = path.join(os.homedir(), '.claude.json')) {
+// type and url are copied (they sign in with OAuth); the guard keeps them read only. With the thread's outbox,
+// bin/render-mcp.js lets the run make image files (HTML to PNG, saved media) that are posted in the thread.
+export function readerMcp(file = path.join(os.homedir(), '.claude.json'), outbox = '') {
   let user = {};
   try {
     user = JSON.parse(fs.readFileSync(file, 'utf8')).mcpServers || {};
   } catch {}
   const shared = Object.fromEntries(['lumen', 'shownroom'].filter((n) => user[n]?.url).map((n) => [n, { type: user[n].type || 'http', url: user[n].url }]));
-  return JSON.stringify({ mcpServers: { attio: { command: process.execPath, args: [attio] }, ...shared } });
+  return JSON.stringify({ mcpServers: { attio: { command: process.execPath, args: [attio] }, ...(outbox ? { render: { command: process.execPath, args: [render, outbox] } } : {}), ...shared } });
 }
 export const readerSettings = () => JSON.stringify({
   hooks: {
