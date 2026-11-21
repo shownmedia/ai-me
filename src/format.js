@@ -195,5 +195,8 @@ export function guestThread(guests, channel, threadTs) {
 export function guestFor(guests, channel, threadTs, user) {
   const g = threadTs ? guestThread(guests, channel, threadTs) : null;
   if (g) return (g.users || []).includes(user) ? g : null;
+  // `full: true` + `channel`: those users get the owner's full tools anywhere in that channel (no scope).
+  const f = (Array.isArray(guests) ? guests : []).find((e) => e.full && e.channel === channel && !e.thread_ts && (e.users || []).includes(user));
+  if (f) return f;
   return (Array.isArray(guests) ? guests : []).find((e) => e.anywhere && e.limited && (e.users || []).includes(user)) || null;
 }

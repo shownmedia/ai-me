@@ -200,6 +200,11 @@ test('anywhere guests: any DM, channel or thread, only listed users; thread entr
   assert.equal(guestFor(g, 'C7', '5.5', 'UM')?.limited, true);
   assert.equal(guestFor(g, 'C1', '1.2', 'UM'), null, 'a listed thread only takes its own users');
   assert.equal(guestFor(g, 'D9', undefined, 'UX'), null);
+  const full = [{ channel: 'C5', full: true, users: ['UF'] }];
+  assert.equal(guestFor(full, 'C5', undefined, 'UF')?.full, true);
+  assert.equal(guestFor(full, 'C5', '7.7', 'UF')?.full, true);
+  assert.equal(guestFor(full, 'C6', undefined, 'UF'), null);
+  assert.equal(guestFor(full, 'C5', undefined, 'UX'), null);
   assert.equal(guestThread(g, 'D9', '5.5'), null, 'anywhere entries never scope the owner');
   assert.equal(guestFor([{ anywhere: true, users: ['UM'] }], 'D9', undefined, 'UM'), null, 'anywhere without limited is ignored');
 });

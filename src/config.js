@@ -68,6 +68,10 @@ export const config = {
   // Guest threads (owner-approved teammates who may task the bot in one thread, scoped to one folder).
   guestsFile: path.resolve(root, env.GUESTS_FILE || 'guests.json'),
   catchUpMin: Number(env.CATCHUP_MIN || 5),
+  // Socket Mode reconnects with Slack's default retry (100 tries, x1.3 each, no cap): after a few hours
+  // offline the next try was hours away, so the bot stayed deaf long after the network came back
+  // (2026-11-21). Same curve, capped at 30s between tries, retrying for days.
+  connectRetry: { retries: 10_000, factor: 1.3, maxTimeout: 30_000 },
   denyEmoji: env.DENY_EMOJI || 'no_entry_sign',
   workingEmoji: env.WORKING_EMOJI || 'eyes',
   finishedEmoji: env.FINISHED_EMOJI || 'white_check_mark',

@@ -23,13 +23,17 @@ import { loadAddons } from './extensions.js';
 import { updateDue, selfUpdate } from './update.js';
 import { CLEANUP_COMMAND, DONE_REPLY, ASKS_BACK, cleanupDue, runCleanup } from './cleanup.js';
 
-const { App, LogLevel } = bolt;
+const { App, LogLevel, SocketModeReceiver } = bolt;
 const store = createStore(path.join(config.dataDir, 'state.json'));
 const { state } = store;
 const systemPrompt = loadSystemPrompt(config);
 const addons = await loadAddons(config); // launch recaps + game tape, when src/addons.js is present
 
-const app = new App({ token: config.botToken, appToken: config.appToken, socketMode: true, logLevel: LogLevel.WARN });
+const receiver = new SocketModeReceiver({ appToken: config.appToken, logLevel: LogLevel.WARN });
+// Bolt gives no option for the reconnect retry, so it is set on the socket's own client (see connectRetry).
+if (receiver.client.webClient) receiver.client.webClient.retryConfig = config.connectRetry;
+else console.log('[boot] could not cap the Slack reconnect retry: @slack/socket-mode changed');
+const app = new App({ token: config.botToken, receiver, logLevel: LogLevel.WARN });
 const client = app.client;
 // Every message the bot writes goes through voice(), so a style setting (LOWERCASE) applies everywhere.
 const voice = (text) => (config.lowercase ? lowercase(text) : text);
@@ -42,6 +46,8 @@ let teamId = '';
 const lastDecline = new Map(); // user:channel -> time, so a spammer can't make the bot spam back
 const running = new Map(); // thread key -> { stop } for every job in progress
 let lessonsBusy = false; // the daily lessons DM is being written (it reads Slack before its Claude run starts)
+let booted = false; // the startup catch-up is done; later catch-up finds count as missed live events
+let missedLive = 0; // owner messages the live connection missed; cleared only by the restart it triggers
 
 const keyOf = (channel, threadTs) => `${channel}:${threadTs}`;
 const humanMinutes = (n) => {
@@ -127,6 +133,10 @@ function loadGuests() {
 async function incoming({ channel, ts, threadTs, user, text = '', files, caughtUp = false, defer = false }) {
   if (store.seen(ts)) return;
   store.markSeen(ts);
+  // An owner message only a periodic catch-up found, minutes late, sent while sweeps were working (so the
+  // Mac was awake and online): the live connection missed it. Asks sent while asleep or offline don't count.
+  const sentMs = Number(ts) * 1000;
+  if (caughtUp && booted && user === config.ownerId && sentMs > (state.lastCatchUpAt || Infinity) && sentMs - state.lastCatchUpAt < 2 * config.catchUpMin * 60_000) missedLive += 1;
   // Add-on threads (recaps, game tape review) have their own rules for who may ask.
   const guests = loadGuests();
   const guest = addons.scope(channel, user, threadTs) || (user !== config.ownerId ? guestFor(guests, channel, threadTs, user) : null);
@@ -161,7 +171,7 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   t.lastAsker = user;
   // A guest thread stays scoped to its project for everyone who asks in it, the owner included.
   const scope = guest || guestThread(guests, channel, threadTs || ts);
-  if (scope) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.anywhere ? [...new Set([...(t.guest?.users || []), user])] : scope.users, emails: { ...t.guest?.emails, ...scope.emails }, limited: Boolean(scope.limited || t.guest?.limited) };
+  if (scope && !scope.full) t.guest = { workdir: scope.workdir, project: scope.project, users: scope.anywhere ? [...new Set([...(t.guest?.users || []), user])] : scope.users, emails: { ...t.guest?.emails, ...scope.emails }, limited: Boolean(scope.limited || t.guest?.limited) };
   if (scope?.thread) Object.assign(t, scope.thread);
   if (scope?.opus && !t.modelPinned) t.model = config.opusModel;
   if (config.cleanUp && user === config.ownerId && !scope) (t.askTs ??= []).push(ts); // what Clean Up may delete later
@@ -281,7 +291,10 @@ function route(ev) {
   if (ev.user_team && teamId && ev.user_team !== teamId) return; // people from other orgs (Slack Connect) never reach the bot
   if (handleComms(ev)) return;
   if (handleJoinGroup(ev)) return;
-  if (addons.intercept?.(ev)) return; // an add-on answered it without a Claude run (a sweeper "no")
+  if (addons.intercept?.(ev)) { // an add-on answered it without a Claude run (a sweeper "no")
+    store.markSeen(ev.ts); // so catch-up never replays it as a task (or as a missed live event)
+    return;
+  }
   addons.observe(ev); // add-ons that act on channel chatter (src/assist.js); never tasks
   const busyHere = running.has(keyOf(ev.channel, ev.thread_ts)) && /^\s*(stop|cancel)\b/i.test(ev.text || '');
   if (!busyHere && !addressedToBot({ channel: ev.channel, threadTs: ev.thread_ts, text: ev.text })) return;
@@ -631,6 +644,8 @@ function pump() {
 
 // Finished conversations fold into one summary message (src/cleanup.js), one thread at a time.
 let cleaning = false;
+// Nothing running, queued or waiting to post: safe to exit and let the service restart us.
+const idle = () => running.size === 0 && activeRuns() === 0 && !lessonsBusy && !cleaning && Object.values(state.threads).every((t) => !t.pending.length && !t.inflight && !t.finalPending);
 const cleaningKeys = new Set();
 async function cleanupTick() {
   if (cleaning || !config.cleanUp || !config.userToken) return;
@@ -663,7 +678,8 @@ async function listConversations() {
     out.push(...(res.channels || []));
     cursor = res.response_metadata?.next_cursor;
   } while (cursor);
-  return out;
+  // DMs first: when Slack rate-limits the sweep, the owner's DM asks shouldn't wait behind 100+ channels.
+  return out.sort((a, b) => Number(Boolean(b.is_im)) - Number(Boolean(a.is_im)));
 }
 
 const THREAD_LOOKBACK_S = 2 * 24 * 3600;
@@ -772,13 +788,30 @@ async function main() {
 
   for (const t of Object.values(state.threads)) await deliver(t);
   await catchUp();
+  booted = true;
   pump();
 
   setInterval(() => {
     for (const t of Object.values(state.threads)) if (t.finalPending && !running.has(keyOf(t.channel, t.threadTs))) deliver(t);
     cleanupTick();
   }, 60_000);
-  setInterval(() => catchUp().then(pump), config.catchUpMin * 60_000);
+  // One sweep at a time: a rate-limited sweep can outlast the interval, and overlapping ones slow each other.
+  let sweeping = false;
+  setInterval(async () => {
+    if (sweeping) return;
+    sweeping = true;
+    const t0 = Date.now();
+    await catchUp().finally(() => { sweeping = false; });
+    if (Date.now() - t0 > 60_000) log(`[catchup] took ${Math.round((Date.now() - t0) / 1000)}s`);
+    pump();
+    // The live connection missed owner messages: restart on a fresh one (launchd brings us back, queued
+    // work resumes). Only while idle, so no run is cut off; until then catch-up keeps answering.
+    if (missedLive && idle()) {
+      log(`[socket] live events missed ${missedLive} of your messages: restarting for a fresh connection`);
+      process.exit(0);
+    }
+    if (missedLive) log(`[socket] live events missed ${missedLive} of your messages: restarting once idle`);
+  }, config.catchUpMin * 60_000);
 
   addons.start({
     client,
@@ -795,8 +828,7 @@ async function main() {
   // service restarts on it. Never mid-task, and nothing to resume because nothing is running.
   if (config.autoUpdate) {
     const updateTick = () => {
-      const idle = running.size === 0 && activeRuns() === 0 && !lessonsBusy && !cleaning && Object.values(state.threads).every((t) => !t.pending.length && !t.inflight && !t.finalPending);
-      if (!idle || !updateDue(state.updateCheckedAt)) return;
+      if (!idle() || !updateDue(state.updateCheckedAt)) return;
       state.updateCheckedAt = Date.now();
       store.save();
       if (selfUpdate({ root: config.root, log })) process.exit(0);
