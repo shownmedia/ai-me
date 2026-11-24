@@ -93,7 +93,9 @@ export const RUN_ENV = { AI_SLACK_BOT: '1', CLAUDE_CODE_DISABLE_BACKGROUND_TASKS
 
 export function buildArgs({ prompt, sessionId, resume, model, permissionMode, systemPrompt, maxBudgetUsd, chrome = false, disallowedTools = [], settings, mcpConfig, extraArgs = '' }) {
   // No model means Claude Code's own default (whatever `claude` uses in a terminal).
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(model ? ['--model', model] : [])];
+  // A prompt starting with "-" would be parsed as a CLI option, so lead with a newline.
+  const safePrompt = /^\s*-/.test(prompt) ? `\n${prompt}` : prompt;
+  const args = ['-p', safePrompt, '--output-format', 'stream-json', '--verbose', ...(model ? ['--model', model] : [])];
   if (permissionMode === 'bypassPermissions') args.push('--dangerously-skip-permissions');
   else args.push('--permission-mode', permissionMode);
   args.push(...(resume ? ['--resume', sessionId] : ['--session-id', sessionId]));

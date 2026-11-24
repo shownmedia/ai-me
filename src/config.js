@@ -83,8 +83,9 @@ export const config = {
   cleanUp: /^(1|true|yes|on)$/i.test(env.CLEAN_UP || ''),
   userToken: env.SLACK_USER_TOKEN || '',
   // One bot message per thread: the status line and every answer edit it instead of posting new messages.
-  // Edits don't notify, so the ✅ on your ask is the done signal. On for everyone; EDIT_IN_PLACE=0 turns it off.
-  editInPlace: !/^(0|false|no|off)$/i.test(env.EDIT_IN_PLACE || ''),
+  // Off by default (Mitchell 2026-11-21: too hard to talk to); ONE_MESSAGE=1 turns it on. The old
+  // EDIT_IN_PLACE flag is ignored, so a stale EDIT_IN_PLACE=1 in an .env doesn't bring it back.
+  editInPlace: /^(1|true|yes|on)$/i.test(env.ONE_MESSAGE || ''),
   cleanupAfterMin: /^(off|no|false)$/i.test(env.CLEANUP_AFTER_MIN || '') ? null : Math.max(1, Number(env.CLEANUP_AFTER_MIN || 60)),
   lowercase: /^(1|true|yes)$/i.test(env.LOWERCASE || ''),
   // A file describing how the owner wants the bot to sound (their own phrases, before/after examples).
@@ -92,7 +93,7 @@ export const config = {
   voiceFile: (env.VOICE_FILE || '').replace(/^~/, os.homedir()),
   // A finished reply with more than this many characters of explanation (code blocks and quotes don't count)
   // goes back to the same session once to be cut down. TIGHTEN_OVER=off turns that off.
-  tightenOver: /^(off|no|false|0)$/i.test(env.TIGHTEN_OVER || '') ? null : Math.max(300, Number(env.TIGHTEN_OVER || 800)),
+  tightenOver: /^(off|no|false|0)$/i.test(env.TIGHTEN_OVER || '') ? null : Math.max(300, Number(env.TIGHTEN_OVER || 600)),
   // Hour (local, 0-23) of the daily lessons DM. Off unless LESSONS_HOUR is set.
   // Lessons are saved to memory when the DM goes out; LESSONS_AUTOSAVE=off goes back to "reply save".
   lessonsAutoSave: !/^(off|no|false)$/i.test(env.LESSONS_AUTOSAVE || ''),
@@ -123,6 +124,23 @@ export const config = {
   // due date the owner set (src/assist.js, add-on). On by default; STAND_IN=off / DUE_REMINDERS=off.
   standIn: !/^(off|0|false|no)$/i.test(env.STAND_IN || ''),
   dueReminders: !/^(off|0|false|no)$/i.test(env.DUE_REMINDERS || ''),
+  // Addendum watch (src/addendum-watch.js, add-on): hourly weekday search for clients asking for new paid work,
+  // posted in #financial-addendums with the Shown Addendums app's token (ADDENDUMS_BOT_TOKEN) so its
+  // prefilled-form button works. ADDENDUM_TAGS: always tagged (default Mitchell, Andy, Dylan Crispin, Josh).
+  addendumWatch: {
+    enabled: /^(1|true|yes|on)$/i.test(env.ADDENDUM_WATCH || ''),
+    token: env.ADDENDUMS_BOT_TOKEN || '',
+    tags: env.ADDENDUM_TAGS ? env.ADDENDUM_TAGS.split(',').map((t) => t.trim()).filter(Boolean) : null, // null = DEFAULT_TAGS in the add-on
+  },
+  // Launch watch (src/launch-watch.js, add-on): every 30 min, X / LinkedIn post links shared in client launch
+  // channels go to Shown Notifier (NOTIFIER_URL + NOTIFIER_LAUNCH_POSTS_KEY = its LAUNCH_POSTS_KEY), which flags
+  // any launch it isn't running for. LAUNCH_WATCH_MODEL overrides the model (default DEFAULT_MODEL).
+  launchWatch: {
+    enabled: /^(1|true|yes|on)$/i.test(env.LAUNCH_WATCH || ''),
+    url: env.NOTIFIER_URL || 'https://shown-lead-notifier-production.up.railway.app',
+    key: env.NOTIFIER_LAUNCH_POSTS_KEY || '',
+    model: env.LAUNCH_WATCH_MODEL || '',
+  },
   // Draft watch (src/draft-watch.js): creators whose live post isn't their draft, flagged in #influencers-general.
   // Runs with the recaps (same Lumen key). DRAFT_WATCH=off stops it.
   draftWatch: { enabled: !/^(off|0|false|no)$/i.test(env.DRAFT_WATCH || ''), channel: env.DRAFT_WATCH_CHANNEL || 'C0AMVPTGTHP' },

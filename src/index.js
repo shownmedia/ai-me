@@ -107,6 +107,8 @@ async function downloadFiles(files, ts) {
 
 // What counts as talking to the bot: anything in a DM, or a message that tags it. In channels
 // the owner also talks to people in the same threads, so untagged replies are never tasks.
+// That holds in threads the bot already works in too: answering every untagged reply there was too
+// spammy (Mitchell 2026-11-23, reverting the 2026-11-21 follow-up rule). Tag it to follow up.
 function addressedToBot({ channel, text = '' }) {
   if (channel.startsWith('D')) return true;
   return Boolean(botUserId && text.includes(`<@${botUserId}>`));
@@ -297,7 +299,7 @@ function route(ev) {
   }
   addons.observe(ev); // add-ons that act on channel chatter (src/assist.js); never tasks
   const busyHere = running.has(keyOf(ev.channel, ev.thread_ts)) && /^\s*(stop|cancel)\b/i.test(ev.text || '');
-  if (!busyHere && !addressedToBot({ channel: ev.channel, threadTs: ev.thread_ts, text: ev.text })) return;
+  if (!busyHere && !addressedToBot({ channel: ev.channel, threadTs: ev.thread_ts, user: ev.user, text: ev.text })) return;
   incoming({ channel: ev.channel, ts: ev.ts, threadTs: ev.thread_ts, user: ev.user, text: ev.text, files: ev.files }).catch((err) =>
     log('[intake] failed:', err.message),
   );
@@ -442,6 +444,13 @@ async function runJob(k, t) {
       t.started = false;
       res = await attempt(false);
     }
+    // Never hand Alejandro a raw error: retry failed runs (not stops or timeouts) a few times first.
+    for (let i = 0; i < 3 && !res.ok && !res.stopped && !res.timedOut; i++) {
+      log(`[job] ${k} failed, auto-retry ${i + 1}/3: ${String(res.text).slice(0, 120)}`);
+      await new Promise((r) => setTimeout(r, 3000 * (i + 1)));
+      if (res.sessionStarted) t.started = true;
+      res = await attempt(t.started);
+    }
     // Replies kept turning into paragraphs inside bullets (2026-11-15): one that runs long goes
     // back to the same session once. Anything that goes wrong keeps the first reply.
     const long = explainingChars(res.text);
@@ -563,8 +572,11 @@ async function deliverOnce(t) {
     return false;
   }
   if (!(await uploadFiles(t, f))) return false;
+  // The answer is posted, so the "on it" line goes: one message left per ask (the ✅ on the ask is the done
+  // signal). If Slack won't delete it, it falls back to the old "Done ✅" edit.
   if (f.statusTs && !f.inPlace) {
-    await safe(() => client.chat.update({ channel: t.channel, ts: f.statusTs, text: f.ok ? `Done ✅ · ${f.footer}` : `Finished, needs a look ⚠️ · ${f.footer}` }), 'update');
+    const gone = await safe(() => client.chat.delete({ channel: t.channel, ts: f.statusTs }), 'unstatus');
+    if (!gone) await safe(() => client.chat.update({ channel: t.channel, ts: f.statusTs, text: f.ok ? `Done ✅ · ${f.footer}` : `Finished, needs a look ⚠️ · ${f.footer}` }), 'update');
   }
   for (const ts of f.msgTs) {
     await safe(() => client.reactions.remove({ channel: t.channel, timestamp: ts, name: config.workingEmoji }), 'unreact');
@@ -714,7 +726,7 @@ async function catchUp() {
         for (const m of res?.messages || []) {
           if (m.ts === threadTs || Number(m.ts) <= Number(since)) continue;
           if (m.bot_id || (m.subtype && m.subtype !== 'file_share') || isCommand(m.text)) continue;
-          if (!addressedToBot({ channel: c.id, text: m.text })) continue;
+          if (!addressedToBot({ channel: c.id, threadTs, user: m.user, text: m.text })) continue;
           await incoming({ channel: c.id, ts: m.ts, threadTs, user: m.user, text: m.text, files: m.files, caughtUp: late(m.ts) });
         }
       }
@@ -739,7 +751,7 @@ async function catchUp() {
         if (Number(m.ts) > Number(t.lastReplySeen || 0)) t.lastReplySeen = m.ts;
         if (m.bot_id || (m.subtype && m.subtype !== 'file_share')) continue;
         if (isCommand(m.text)) continue;
-        if (!addressedToBot({ channel: t.channel, threadTs: t.threadTs, text: m.text })) continue;
+        if (!addressedToBot({ channel: t.channel, threadTs: t.threadTs, user: m.user, text: m.text })) continue;
         await incoming({ channel: t.channel, ts: m.ts, threadTs: t.threadTs, user: m.user, text: m.text, files: m.files, caughtUp: late(m.ts) });
       }
     }

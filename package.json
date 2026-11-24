@@ -9,6 +9,8 @@
     "try": "node --env-file=.env bin/try.js",
     "lessons": "node --env-file=.env bin/lessons.js",
     "assist": "node --env-file=.env bin/assist.js",
+    "addendums": "node --env-file=.env bin/addendum-watch.js",
+    "launch-watch": "node --env-file=.env bin/launch-watch.js",
     "sweeper": "node --env-file=.env bin/sweeper.js",
     "concepts": "node --env-file=.env bin/sales-concepts.js",
     "next-steps": "node --env-file=.env bin/next-steps.js",

@@ -355,3 +355,8 @@ test('render-mcp: safe names, public https only, renders a png into the outbox',
   assert.ok(fs.statSync(path.join(outbox, 'red.png')).size > 100);
   fs.rmSync(outbox, { recursive: true, force: true });
 });
+
+test('buildArgs guards prompts that start with a dash', () => {
+  const a = buildArgs({ ...base, prompt: '- learn ^', resume: false });
+  assert.ok(a[1].startsWith('\n'));
+});
