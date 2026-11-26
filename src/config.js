@@ -95,6 +95,8 @@ export const config = {
   // bot's normal tools; what those are is set by WORKDIR (its CLAUDE.md, .mcp.json, skills). Off unless TEAM_MODE=1.
   teamMode: /^(1|true|yes|on)$/i.test(env.TEAM_MODE || ''),
   // Replaces prompts/system.md (same {{BOT_NAME}} / {{OWNER_NAME}} / {{WORKDIR}} placeholders), for a bot that isn't someone's own Claude Code.
+  // A command that gets every channel message as one JSON argument (see route() in index.js). Space-separated, no shell.
+  watchCmd: (env.WATCH_CMD || '').split(' ').filter(Boolean).map((a) => a.replace(/^~/, os.homedir())),
   systemPromptFile: (env.SYSTEM_PROMPT_FILE || '').replace(/^~/, os.homedir()),
   // A finished reply with more than this many characters of explanation (code blocks and quotes don't count)
   // goes back to the same session once to be cut down. TIGHTEN_OVER=off turns that off.

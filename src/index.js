@@ -8,6 +8,7 @@
 //   - final replies that fail to post are retried until they land
 //   - messages sent while the bot was offline are found by a periodic catch-up scan
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -289,8 +290,22 @@ function handleJoinGroup(ev) {
   return true;
 }
 
+// WATCH_CMD: every channel message (not DMs), Slack Connect guests included, is handed to this command as one JSON
+// argument, fire and forget. A team bot (ShownRunner) uses it to react to chatter it isn't tagged in, like a client
+// asking for a call. No shell, never awaited, never a task.
+function watch(ev) {
+  if (!config.watchCmd.length || ev.channel?.startsWith('D')) return;
+  try {
+    const [cmd, ...args] = config.watchCmd;
+    spawn(cmd, [...args, JSON.stringify({ channel: ev.channel, ts: ev.ts, thread_ts: ev.thread_ts, user: ev.user, user_team: ev.user_team, text: ev.text || '' })], { detached: true, stdio: 'ignore' }).on('error', (err) => log('[watch] failed:', err.message)).unref();
+  } catch (err) {
+    log('[watch] failed:', err.message);
+  }
+}
+
 function route(ev) {
   if (!ev || ev.bot_id || (ev.subtype && ev.subtype !== 'file_share')) return;
+  watch(ev);
   if (ev.user_team && teamId && ev.user_team !== teamId) return; // people from other orgs (Slack Connect) never reach the bot
   if (handleComms(ev)) return;
   if (handleJoinGroup(ev)) return;
