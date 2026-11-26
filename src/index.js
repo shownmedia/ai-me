@@ -303,6 +303,12 @@ function watch(ev) {
   }
 }
 
+// CASUAL_STATUS wording: a rough size, never a countdown.
+function casualStatus(etaMin, left, offline = false) {
+  const say = left <= 0 ? 'still going, give me a few more min' : etaMin <= 2 ? 'give me one min' : 'give me a few min';
+  return offline ? `sorry, i was offline. ${say}` : say;
+}
+
 function route(ev) {
   if (!ev || ev.bot_id || (ev.subtype && ev.subtype !== 'file_share')) return;
   watch(ev);
@@ -333,7 +339,8 @@ async function runJob(k, t) {
   store.save();
 
   // Restarts are invisible to the owner: a resumed job just carries on under the same status line.
-  const opening = msgs.some((m) => m.caughtUp && !m.resumed) ? 'Sorry for the wait, I was offline. On it now.' : "Yes, I'm on it.";
+  const offline = msgs.some((m) => m.caughtUp && !m.resumed);
+  const opening = config.casualStatus ? `${offline ? 'sorry, i was offline. ' : ''}give me one sec` : offline ? 'Sorry for the wait, I was offline. On it now.' : "Yes, I'm on it.";
   if (t.reactTs) safe(() => client.reactions.remove({ channel: t.channel, timestamp: t.reactTs, name: 'hourglass_flowing_sand' }), 'unreact');
   // EDIT_IN_PLACE: the thread's one message shows the status under what it already says.
   const inPlace = config.editInPlace && !t.guest;
@@ -364,7 +371,8 @@ async function runJob(k, t) {
     if (!status?.ts || etaMin == null) return;
     const left = Math.ceil(etaMin - (Date.now() - startedAt) / 60_000);
     const first = Date.now() - startedAt < 90_000;
-    const text = left <= 0 ? `${opening} Taking a bit longer than I thought, still going.` : `${opening} ${first ? 'Should take about' : 'About'} ${humanMinutes(left)}${first ? '.' : ' left.'}`;
+    const text = config.casualStatus ? casualStatus(etaMin, left, offline)
+      : left <= 0 ? `${opening} Taking a bit longer than I thought, still going.` : `${opening} ${first ? 'Should take about' : 'About'} ${humanMinutes(left)}${first ? '.' : ' left.'}`;
     if (text === shown) return;
     shown = text;
     safe(() => client.chat.update({ channel: t.channel, ts: status.ts, text: withBase(text) }), 'update');

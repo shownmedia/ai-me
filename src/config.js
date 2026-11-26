@@ -94,6 +94,8 @@ export const config = {
   // A team bot (ShownRunner): anyone in the workspace can task it, not just the owner. Their runs get the
   // bot's normal tools; what those are is set by WORKDIR (its CLAUDE.md, .mcp.json, skills). Off unless TEAM_MODE=1.
   teamMode: /^(1|true|yes|on)$/i.test(env.TEAM_MODE || ''),
+  // CASUAL_STATUS: the loading line says "give me one sec" / "one min" / "a few min" instead of "Yes, I'm on it. About 3 minutes left."
+  casualStatus: /^(1|true|yes|on)$/i.test(env.CASUAL_STATUS || ''),
   // Replaces prompts/system.md (same {{BOT_NAME}} / {{OWNER_NAME}} / {{WORKDIR}} placeholders), for a bot that isn't someone's own Claude Code.
   // A command that gets every channel message as one JSON argument (see route() in index.js). Space-separated, no shell.
   watchCmd: (env.WATCH_CMD || '').split(' ').filter(Boolean).map((a) => a.replace(/^~/, os.homedir())),
