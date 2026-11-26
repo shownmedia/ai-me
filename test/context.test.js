@@ -89,3 +89,10 @@ test('the prompt puts the context before the ask and says where the reply goes',
   assert.match(p, /Mitchell's ask/);
   assert.match(p, /channel reply format/);
 });
+
+test('team mode labels who asked instead of calling it the owner\'s ask', () => {
+  const cfg = { ownerName: 'Mitchell', ownerId: 'UOWN', teamMode: true };
+  const p = buildPrompt(cfg, { channel: 'C1' }, [{ text: 'find time for the thread review', from: 'UTONY' }], 'THREAD');
+  assert.match(p, /The ask \(tagging you\):\nFrom <@UTONY>: find time/);
+  assert.doesNotMatch(p, /Mitchell's ask/);
+});

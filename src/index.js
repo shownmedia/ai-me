@@ -142,7 +142,8 @@ async function incoming({ channel, ts, threadTs, user, text = '', files, caughtU
   // Add-on threads (recaps, game tape review) have their own rules for who may ask.
   const guests = loadGuests();
   const guest = addons.scope(channel, user, threadTs) || (user !== config.ownerId ? guestFor(guests, channel, threadTs, user) : null);
-  if (user !== config.ownerId && !guest) {
+  // Team mode: any teammate in the workspace may task it (Slack Connect users never get this far, see route()).
+  if (user !== config.ownerId && !guest && !(config.teamMode && user)) {
     store.save();
     // Someone else asked for something: tell only them, quietly, and mark the message.
     const addressed = channel.startsWith('D') || (botUserId && text.includes(`<@${botUserId}>`));
@@ -555,7 +556,7 @@ async function deliverOnce(t) {
     }
   }
   if (!f.inPlace) try {
-    const parts = chunk(`<@${t.guest && t.lastAsker ? t.lastAsker : config.ownerId}> ${toMrkdwn(f.text)}`);
+    const parts = chunk(`<@${(t.guest || config.teamMode) && t.lastAsker ? t.lastAsker : config.ownerId}> ${toMrkdwn(f.text)}`);
     for (let i = f.posted; i < parts.length; i++) {
       const r = await client.chat.postMessage({ channel: t.channel, thread_ts: t.threadTs, text: parts[i], unfurl_links: false, unfurl_media: false });
       f.posted = i + 1;
@@ -725,7 +726,7 @@ async function catchUp() {
         const res = await safe(() => client.conversations.replies({ channel: c.id, ts: threadTs, oldest: since, limit: 200 }), 'replies');
         for (const m of res?.messages || []) {
           if (m.ts === threadTs || Number(m.ts) <= Number(since)) continue;
-          if (m.bot_id || (m.subtype && m.subtype !== 'file_share') || isCommand(m.text)) continue;
+          if (m.bot_id || (m.user_team && teamId && m.user_team !== teamId) || (m.subtype && m.subtype !== 'file_share') || isCommand(m.text)) continue;
           if (!addressedToBot({ channel: c.id, threadTs, user: m.user, text: m.text })) continue;
           await incoming({ channel: c.id, ts: m.ts, threadTs, user: m.user, text: m.text, files: m.files, caughtUp: late(m.ts) });
         }
@@ -733,7 +734,7 @@ async function catchUp() {
       let newest = oldest;
       for (const m of msgs.filter((x) => Number(x.ts) > Number(oldest)).sort((a, b) => Number(a.ts) - Number(b.ts))) {
         if (Number(m.ts) > Number(newest)) newest = m.ts;
-        if (m.bot_id || (m.subtype && m.subtype !== 'file_share')) continue;
+        if (m.bot_id || (m.user_team && teamId && m.user_team !== teamId) || (m.subtype && m.subtype !== 'file_share')) continue;
         if (isCommand(m.text)) continue; // !comms / !join were answered live; never replay them as tasks
         if (c.is_im || m.text?.includes(`<@${botUserId}>`)) {
           await incoming({ channel: c.id, ts: m.ts, threadTs: m.thread_ts, user: m.user, text: m.text, files: m.files, caughtUp: late(m.ts) });
@@ -749,7 +750,7 @@ async function catchUp() {
       for (const m of res?.messages || []) {
         if (m.ts === t.threadTs) continue;
         if (Number(m.ts) > Number(t.lastReplySeen || 0)) t.lastReplySeen = m.ts;
-        if (m.bot_id || (m.subtype && m.subtype !== 'file_share')) continue;
+        if (m.bot_id || (m.user_team && teamId && m.user_team !== teamId) || (m.subtype && m.subtype !== 'file_share')) continue;
         if (isCommand(m.text)) continue;
         if (!addressedToBot({ channel: t.channel, threadTs: t.threadTs, user: m.user, text: m.text })) continue;
         await incoming({ channel: t.channel, ts: m.ts, threadTs: t.threadTs, user: m.user, text: m.text, files: m.files, caughtUp: late(m.ts) });

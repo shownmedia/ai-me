@@ -91,6 +91,11 @@ export const config = {
   // A file describing how the owner wants the bot to sound (their own phrases, before/after examples).
   // Added to the end of the system prompt on every run, so it wins over the general rules.
   voiceFile: (env.VOICE_FILE || '').replace(/^~/, os.homedir()),
+  // A team bot (ShownRunner): anyone in the workspace can task it, not just the owner. Their runs get the
+  // bot's normal tools; what those are is set by WORKDIR (its CLAUDE.md, .mcp.json, skills). Off unless TEAM_MODE=1.
+  teamMode: /^(1|true|yes|on)$/i.test(env.TEAM_MODE || ''),
+  // Replaces prompts/system.md (same {{BOT_NAME}} / {{OWNER_NAME}} / {{WORKDIR}} placeholders), for a bot that isn't someone's own Claude Code.
+  systemPromptFile: (env.SYSTEM_PROMPT_FILE || '').replace(/^~/, os.homedir()),
   // A finished reply with more than this many characters of explanation (code blocks and quotes don't count)
   // goes back to the same session once to be cut down. TIGHTEN_OVER=off turns that off.
   tightenOver: /^(off|no|false|0)$/i.test(env.TIGHTEN_OVER || '') ? null : Math.max(300, Number(env.TIGHTEN_OVER || 600)),
