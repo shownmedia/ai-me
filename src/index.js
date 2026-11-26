@@ -303,9 +303,9 @@ function watch(ev) {
   }
 }
 
-// CASUAL_STATUS wording: a rough size, never a countdown.
-function casualStatus(etaMin, left, offline = false) {
-  const say = left <= 0 ? 'still going, give me a few more min' : etaMin <= 2 ? 'give me one min' : etaMin <= 3 ? 'give me a few min' : `give me about ${etaMin} min`;
+// CASUAL_STATUS wording, from the minutes left on the estimate, so the number counts down.
+function casualStatus(left, offline = false) {
+  const say = left <= 0 ? 'still going, give me a few more min' : left <= 2 ? 'give me one min' : left <= 3 ? 'give me a few min' : `give me about ${left} min`;
   return offline ? `sorry, i was offline. ${say}` : say;
 }
 
@@ -371,7 +371,7 @@ async function runJob(k, t) {
     if (!status?.ts || etaMin == null) return;
     const left = Math.ceil(etaMin - (Date.now() - startedAt) / 60_000);
     const first = Date.now() - startedAt < 90_000;
-    const text = config.casualStatus ? casualStatus(etaMin, left, offline)
+    const text = config.casualStatus ? casualStatus(left, offline)
       : left <= 0 ? `${opening} Taking a bit longer than I thought, still going.` : `${opening} ${first ? 'Should take about' : 'About'} ${humanMinutes(left)}${first ? '.' : ' left.'}`;
     if (text === shown) return;
     shown = text;
