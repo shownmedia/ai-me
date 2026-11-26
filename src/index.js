@@ -305,7 +305,7 @@ function watch(ev) {
 
 // CASUAL_STATUS wording: a rough size, never a countdown.
 function casualStatus(etaMin, left, offline = false) {
-  const say = left <= 0 ? 'still going, give me a few more min' : etaMin <= 2 ? 'give me one min' : 'give me a few min';
+  const say = left <= 0 ? 'still going, give me a few more min' : etaMin <= 2 ? 'give me one min' : etaMin <= 3 ? 'give me a few min' : `give me about ${etaMin} min`;
   return offline ? `sorry, i was offline. ${say}` : say;
 }
 
