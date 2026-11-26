@@ -124,6 +124,9 @@ export const config = {
   // due date the owner set (src/assist.js, add-on). On by default; STAND_IN=off / DUE_REMINDERS=off.
   standIn: !/^(off|0|false|no)$/i.test(env.STAND_IN || ''),
   dueReminders: !/^(off|0|false|no)$/i.test(env.DUE_REMINDERS || ''),
+  // Missing links (src/missing-link.js, add-on): a teammate's recap or message in a client launch channel points the
+  // client at something without linking it; right away (or after MISSING_LINK_WAIT_MIN) the bot asks them in #launches-bots. MISSING_LINKS=off.
+  missingLinks: { enabled: !/^(off|0|false|no)$/i.test(env.MISSING_LINKS || ''), waitMin: Number(env.MISSING_LINK_WAIT_MIN) >= 0 ? Number(env.MISSING_LINK_WAIT_MIN) : 0 },
   // Addendum watch (src/addendum-watch.js, add-on): hourly weekday search for clients asking for new paid work,
   // posted in #financial-addendums with the Shown Addendums app's token (ADDENDUMS_BOT_TOKEN) so its
   // prefilled-form button works. ADDENDUM_TAGS: always tagged (default Mitchell, Andy, Dylan Crispin, Josh).
