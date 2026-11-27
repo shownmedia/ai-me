@@ -17,6 +17,7 @@ import { config } from './config.js';
 import { createStore } from './store.js';
 import { runClaude, estimateTask, requestedMinutes, activeRuns, SELF_PROTECT, RUN_ENV, READER_TOOLS, READER_DENY, readerSettings, readerMcp } from './claude.js';
 import { reviewLessons, lessonsDue } from './lessons.js';
+import { tidyMemory } from './memory-tidy.js';
 import { outboxDir, prepareOutbox, collectOutbox, clearOutbox } from './outbox.js';
 import { toMrkdwn, chunk, editedReply, newMessage, lowercase, explainingChars, parseComms, commsReply, threadsWithNewReplies, guestFor, guestThread } from './format.js';
 import { loadSystemPrompt, guestPrompt, readerPrompt, ownerInGuestPrompt, buildPrompt, gatherContext } from './prompt.js';
@@ -880,7 +881,9 @@ async function main() {
       state.lessonsDate = today;
       store.save();
       lessonsBusy = true;
-      reviewLessons({ client, config, state, botUserId, since: Date.now() - 24 * 3600_000, log }).finally(() => { lessonsBusy = false; });
+      reviewLessons({ client, config, state, botUserId, since: Date.now() - 24 * 3600_000, log })
+        .then(() => (config.memoryTidy ? tidyMemory({ config, log }) : null))
+        .finally(() => { lessonsBusy = false; });
     };
     lessonsTick();
     setInterval(lessonsTick, 10 * 60_000);

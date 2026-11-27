@@ -108,6 +108,8 @@ export const config = {
   lessonsAutoSave: !/^(off|no|false)$/i.test(env.LESSONS_AUTOSAVE || ''),
   // LESSONS_DM=off: no DM at all, the lessons are saved quietly (logged as [lessons] in logs/bot.log).
   lessonsDm: !/^(off|no|false)$/i.test(env.LESSONS_DM || ''),
+  // After the lessons, tidy the memory they write into (src/memory-tidy.js). MEMORY_TIDY=off stops it.
+  memoryTidy: !/^(off|no|false)$/i.test(env.MEMORY_TIDY || ''),
   lessonsHour: !env.LESSONS_HOUR || /^(off|no|false)$/i.test(env.LESSONS_HOUR) ? null : Math.min(23, Math.max(0, Number(env.LESSONS_HOUR))),
   maxParallel: Math.max(1, Number(env.MAX_PARALLEL || 3)),
   // Pull new code from the repo it was cloned from, while idle, and restart on it (src/update.js).
